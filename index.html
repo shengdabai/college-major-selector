@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>智慧大学 · 高考志愿决策参考</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        paper:  { DEFAULT:'#faf9f5', 50:'#fdfcf9', 100:'#f6f4ec', 200:'#ece9dc' },
+        ink:    { DEFAULT:'#1a1a1a', 2:'#4a4a4a', 3:'#8a8a8a', 4:'#bdbdbd' },
+        line:   { DEFAULT:'#e5e3dc', 2:'#d4d1c5' },
+        accent: { DEFAULT:'#c8102e', 2:'#1f3a5f', soft:'#fbeae5' },
+        push:   { DEFAULT:'#b03a2e', soft:'#f8e8e3' },
+        warn:   { DEFAULT:'#c47a2c', soft:'#f7ecd9' },
+        safe:   { DEFAULT:'#4a7c59', soft:'#e3ede4' },
+        gold:   { DEFAULT:'#b8870b', soft:'#f4ecd0' },
+      },
+      fontFamily: {
+        display: ['"Noto Serif SC"', '"Source Han Serif SC"', '"Songti SC"', 'serif'],
+        sans:    ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+        mono:    ['"JetBrains Mono"', '"SF Mono"', 'ui-monospace', 'monospace'],
+      },
+      letterSpacing: { tight2: '-0.02em', wide2: '0.18em' },
+      boxShadow: { card: '0 1px 0 rgba(26,26,26,.04), 0 0 0 1px rgba(26,26,26,.06)' },
+    }
+  }
+}
+</script>
+<style>
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { background: #faf9f5; color: #1a1a1a; font-feature-settings: "tnum" 1, "ss01" 1; }
+  .num { font-variant-numeric: tabular-nums; font-family: "JetBrains Mono","SF Mono",monospace; }
+  .num-display { font-variant-numeric: tabular-nums; font-family: "Noto Serif SC", serif; font-weight: 600; letter-spacing: -0.02em; }
+  .scroll-thin::-webkit-scrollbar { width:6px; height:6px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background:#d4d1c5; border-radius:3px; }
+  .scroll-thin::-webkit-scrollbar-thumb:hover { background:#bdbdbd; }
+  /* 极薄 pill：不堆颜色，靠衬线字体 + 线框 */
+  .pill { display:inline-flex; align-items:center; padding: 2px 8px; font-size:11px; font-weight:500; letter-spacing:0.04em; border-radius: 2px; line-height: 1.4; }
+  .pill-985    { background:#1a1a1a; color:#faf9f5; }
+  .pill-211    { background:#3a3a3a; color:#faf9f5; }
+  .pill-双一流  { background:#1f3a5f; color:#faf9f5; }
+  .pill-985 + .pill-211 { margin-left: 4px; }
+  .pill-line   { border:1px solid #d4d1c5; color:#4a4a4a; background: transparent; }
+  .pill-soft   { background:#ece9dc; color:#1a1a1a; }
+  .pill-gold   { background:#f4ecd0; color:#876508; }
+  .pill-push   { background:#f8e8e3; color:#8e2e22; }
+  .pill-warn   { background:#f7ecd9; color:#955a1f; }
+  .pill-safe   { background:#e3ede4; color:#3a6047; }
+  /* 文字按钮 — 有质感：边线 + 微抬升 + 学院红投影 */
+  .chip {
+    display:inline-flex; align-items:center; gap:4px;
+    padding: 5px 11px; font-size:13px; color:#4a4a4a;
+    border:1px solid #e5e3dc; background:#fff;
+    border-radius: 2px; cursor:pointer;
+    transition: transform .12s ease, background .15s, border-color .15s, color .15s, box-shadow .15s;
+    user-select:none; position:relative;
+  }
+  .chip:hover { color:#1a1a1a; border-color:#1a1a1a; transform: translateY(-1px); box-shadow: 2px 2px 0 -1px #1a1a1a; }
+  .chip:active { transform: translateY(0) scale(0.97); box-shadow: none; }
+  .chip-on { background:#1a1a1a !important; color:#faf9f5 !important; border-color:#1a1a1a !important; box-shadow: 2px 2px 0 #c8102e !important; }
+  .chip-on:hover { transform: translateY(-1px) !important; box-shadow: 3px 3px 0 #c8102e !important; }
+  .chip-count { font-size:11px; color:#8a8a8a; font-variant-numeric: tabular-nums; }
+  .chip-on .chip-count { color: rgba(250,249,245,.6); }
+  /* 点击波纹动效 */
+  @keyframes chip-pop { 0% { transform: scale(.94); } 60% { transform: scale(1.05); } 100% { transform: scale(1); } }
+  .chip.chip-pop { animation: chip-pop .25s ease; }
+  /* 段落分隔 */
+  .rule { height: 1px; background: #e5e3dc; }
+  .rule-thick { height: 2px; background: #1a1a1a; }
+  /* 卡片不要圆角狂魔 */
+  .card { background:#fff; border:1px solid #e5e3dc; }
+  .card-flat { background:#fff; }
+  /* tab */
+  .tab-btn { padding: 14px 0; margin-right: 28px; font-size: 14px; color:#8a8a8a; border-bottom: 2px solid transparent; cursor:pointer; letter-spacing: 0.01em; transition: color .15s; font-weight: 500; }
+  .tab-btn:hover { color:#1a1a1a; }
+  .tab-active { color:#1a1a1a !important; border-bottom-color:#1a1a1a !important; }
+  .tab-num { font-family:"Noto Serif SC", serif; font-style: italic; color:#bdbdbd; margin-right: 8px; font-size: 13px; }
+  .tab-active .tab-num { color: #c8102e; }
+  /* details 翻转箭头 */
+  details > summary { list-style:none; cursor:pointer; }
+  details > summary::-webkit-details-marker { display:none; }
+  /* 顶部 hero 衬线大字 */
+  .display-hero { font-family: "Noto Serif SC", serif; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+  .display-num  { font-family: "Noto Serif SC", serif; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1; }
+  /* 输入框 */
+  .input-line { background: transparent; border:0; border-bottom: 1px solid #d4d1c5; padding: 8px 2px; font-size: 16px; outline: none; transition: border-color .15s; }
+  .input-line:focus { border-bottom-color: #1a1a1a; }
+  /* primary button */
+  .btn-primary { display:inline-flex; align-items:center; gap:6px; padding: 10px 20px; background:#1a1a1a; color:#faf9f5; font-size:14px; font-weight:500; letter-spacing: 0.02em; border:0; cursor:pointer; transition: background .15s; }
+  .btn-primary:hover { background: #c8102e; }
+  .btn-ghost { display:inline-flex; align-items:center; gap:4px; padding: 6px 12px; background:transparent; color:#4a4a4a; font-size:12px; border:1px solid #d4d1c5; cursor:pointer; transition: all .15s; }
+  .btn-ghost:hover { border-color: #1a1a1a; color:#1a1a1a; }
+  /* 优势专业小金标 */
+  .gold-mark { color:#b8870b; font-weight:500; }
+  /* 三档色条 */
+  .tier-rule { height: 3px; }
+  .tier-push { background: #b03a2e; }
+  .tier-warn { background: #c47a2c; }
+  .tier-safe { background: #4a7c59; }
+  /* 表格 */
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.data th { text-align: left; padding: 10px 14px; font-weight: 500; color:#8a8a8a; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid #e5e3dc; }
+  table.data td { padding: 12px 14px; border-bottom: 1px solid #f0eee5; vertical-align: top; }
+  table.data tr:hover td { background: #faf9f5; }
+  /* 选中态 */
+  .selected-row { background: #faf9f5 !important; }
+  /* 页脚 */
+  footer { font-family: "Inter", sans-serif; }
+  /* 防止 Tailwind 紫色复发 */
+  ::selection { background:#1a1a1a; color:#faf9f5; }
+</style>
+</head>
+<body class="font-sans pb-32">
+
+<!-- ============= 顶部（非 sticky，全部跟随滚动） ============= -->
+<header class="border-b border-line bg-paper">
+  <div class="max-w-[1280px] mx-auto px-8">
+    <!-- Hero strip：滚动时不跟随 -->
+    <div class="grid grid-cols-12 gap-8 py-8 items-end">
+      <div class="col-span-7">
+        <div class="flex items-baseline gap-3 mb-4">
+          <span class="display-hero text-2xl">智慧大学</span>
+          <span class="text-xs tracking-wide2 text-ink-3 uppercase">Wisdom · College</span>
+          <span class="ml-auto text-xs text-ink-3">2026 高考志愿决策参考</span>
+        </div>
+        <h1 class="display-hero text-[36px] leading-[1.15] mb-3">为高中生准备的大学与专业对照工具</h1>
+        <p class="text-ink-2 text-[14px] leading-[1.65] max-w-[560px]">基于教育部公开名单（<span class="num">2,756</span> 所院校 · <span class="num">860</span> 个本科专业），支持上传任意省份录取数据与一分一段表，提供地域、专业、分数三个维度的志愿筛选与冲稳保推荐，并可接入 AI 大模型进行专业顾问问答。</p>
+      </div>
+      <div class="col-span-5">
+        <div class="border-l border-line-2 pl-6">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="text-xs text-ink-3 tracking-wide2 uppercase">四种使用方式</div>
+            <button onclick="exportCurrentCSV()" class="btn-ghost ml-auto">下载 CSV</button>
+          </div>
+          <ol class="space-y-1 text-[13px]">
+            <li><span class="num-display text-ink-3 mr-2">01</span>从你的<b>所在省份</b>找学校 → 看专业</li>
+            <li><span class="num-display text-ink-3 mr-2">02</span>从你想读的<b>专业</b>反查 → 找学校</li>
+            <li><span class="num-display text-ink-3 mr-2">03</span>上传录取数据 → <b>冲稳保推荐</b>（支持任意省份）</li>
+            <li><span class="num-display text-ink-3 mr-2">04</span>接入 AI 大模型 → <b>大学专业顾问</b>问答</li>
+          </ol>
+          <div class="mt-3 pt-3 border-t border-line flex items-center gap-4 text-xs text-ink-3">
+            <span><span class="num-display text-ink text-sm mr-1" id="stat-uni">—</span>所院校</span>
+            <span><span class="num-display text-ink text-sm mr-1" id="stat-major">—</span>个专业</span>
+            <span><span class="num-display text-ink text-sm mr-1" id="stat-province">—</span>个省份</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============= Sticky Tabs（紧凑版） ============= -->
+<div class="border-y border-line bg-paper/95 backdrop-blur sticky top-0 z-30">
+  <div class="max-w-[1280px] mx-auto px-8 flex items-center">
+    <!-- 紧凑品牌（仅 sticky 状态可见 — 用 IntersectionObserver 控制） -->
+    <div id="sticky-brand" class="display-hero text-base mr-8 opacity-0 transition-opacity">智慧大学</div>
+    <nav class="flex items-end -mb-px">
+      <button data-tab="A" class="tab-btn tab-active !py-3"><span class="tab-num">01</span>地域 · 学校 · 专业</button>
+      <button data-tab="B" class="tab-btn !py-3"><span class="tab-num">02</span>专业 · 地域 · 学校</button>
+      <button data-tab="C" class="tab-btn !py-3"><span class="tab-num">03</span>录取数据 · 分数 · 推荐</button>
+      <button data-tab="D" class="tab-btn !py-3"><span class="tab-num">04</span>大学专业顾问</button>
+    </nav>
+  </div>
+</div>
+<!-- sentinel for IntersectionObserver -->
+<div id="hero-sentinel" style="height:1px"></div>
+
+<!-- ============= 加载态 ============= -->
+<div id="loading" class="max-w-[1280px] mx-auto px-8 py-24 text-center text-ink-3">
+  <div class="display-hero text-2xl text-ink mb-3">正在加载</div>
+  <div class="text-sm">院校 · 专业 · 录取数据 · 一分一段表</div>
+</div>
+
+<!-- ============= 模式 A：地域 → 学校 → 专业 ============= -->
+<main id="tab-A" class="max-w-[1280px] mx-auto px-8 py-10 hidden">
+  <section class="grid grid-cols-12 gap-10">
+    <!-- 左侧筛选 -->
+    <aside class="col-span-3 space-y-8">
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">关键词</h3>
+        <input id="A-search" type="search" placeholder="搜索学校名称" class="input-line w-full">
+      </div>
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">省份</h3>
+        <div id="A-provinces" class="flex flex-wrap gap-1 max-h-72 overflow-auto scroll-thin -mx-2 px-2"></div>
+      </div>
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">城市</h3>
+        <div id="A-cities" class="flex flex-wrap gap-1 max-h-52 overflow-auto scroll-thin -mx-2 px-2 text-xs text-ink-3">先选省份</div>
+      </div>
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">院校等级</h3>
+        <div id="A-levels" class="flex flex-wrap gap-1"></div>
+      </div>
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">院校类型</h3>
+        <div id="A-types" class="flex flex-wrap gap-1"></div>
+      </div>
+      <button id="A-reset" class="text-xs text-ink-3 hover:text-accent border-b border-dotted border-ink-4">清空所有筛选</button>
+    </aside>
+    <!-- 右侧结果 -->
+    <section class="col-span-9">
+      <div class="flex items-end justify-between mb-6 pb-3 border-b-2 border-ink">
+        <div>
+          <h2 class="display-hero text-2xl">院校列表</h2>
+          <p class="text-xs text-ink-3 mt-1" id="A-count">—</p>
+        </div>
+        <select id="A-sort" class="text-sm bg-transparent border-b border-line-2 py-1 pr-6 cursor-pointer">
+          <option value="level">按等级排序</option>
+          <option value="name">按名称排序</option>
+          <option value="province">按省份排序</option>
+        </select>
+      </div>
+      <div id="A-list" class="space-y-0"></div>
+      <div id="A-pager" class="mt-10 flex items-center justify-center gap-2"></div>
+    </section>
+  </section>
+</main>
+
+<!-- ============= 模式 B：专业 → 地域 → 学校 ============= -->
+<main id="tab-B" class="max-w-[1280px] mx-auto px-8 py-10 hidden">
+  <section class="grid grid-cols-12 gap-10">
+    <aside class="col-span-3 space-y-8">
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">学科门类</h3>
+        <div id="B-cats" class="flex flex-wrap gap-1"></div>
+      </div>
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">专业类</h3>
+        <div id="B-subs" class="flex flex-wrap gap-1 max-h-56 overflow-auto scroll-thin text-xs text-ink-3">先选学科门类</div>
+      </div>
+      <div>
+        <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">具体专业</h3>
+        <input id="B-search" type="search" placeholder="搜索专业名称" class="input-line w-full mb-3">
+        <div id="B-majors" class="space-y-px max-h-96 overflow-auto scroll-thin -mx-2"></div>
+      </div>
+    </aside>
+    <section class="col-span-9">
+      <div id="B-empty" class="border border-dashed border-line-2 p-16 text-center">
+        <div class="display-hero text-xl text-ink mb-2">从左侧选一个专业</div>
+        <p class="text-sm text-ink-3 max-w-md mx-auto">系统会列出全国所有开设此专业的本科院校，并按"是否优势专业"标记。</p>
+      </div>
+      <div id="B-result" class="hidden"></div>
+    </section>
+  </section>
+</main>
+
+<!-- ============= 模式 C：青海高考 ============= -->
+<main id="tab-C" class="max-w-[1280px] mx-auto px-8 py-10 hidden">
+
+  <!-- 模式 C 头部 -->
+  <section class="mb-10">
+    <div class="grid grid-cols-12 gap-8 mb-6 items-end">
+      <div class="col-span-7">
+        <div class="text-xs text-accent tracking-wide2 uppercase mb-2">支持任意省份 · 上传数据后启用</div>
+        <h1 class="display-hero text-[36px] mb-2">从分数到志愿表</h1>
+        <p class="text-ink-2 text-[15px] leading-[1.7]">
+          上传你所在省份的历年录取数据与一分一段表，根据你的分数（或位次）按"冲—稳—保"三档推荐院校与专业。
+        </p>
+      </div>
+      <div class="col-span-5">
+        <div class="border-l border-line-2 pl-6 text-xs text-ink-3 grid grid-cols-2 gap-y-1.5">
+          <div id="C-data-status" class="contents"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 数据上传区 -->
+    <div class="mb-6 border border-line bg-white p-6">
+      <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">上传录取数据 JSON 文件</div>
+      <div id="C-upload-area" class="border-2 border-dashed border-line-2 p-6 text-center cursor-pointer hover:border-accent transition-colors">
+        <div class="text-2xl mb-2">📂</div>
+        <p class="text-sm text-ink-2 mb-1">拖拽 JSON 文件到此处，或点击选择文件</p>
+        <p class="text-xs text-ink-3">支持同时上传多个年份 · 文件名需含4位数字年份（如 <code class="bg-paper-100 px-1">2024.json</code>）</p>
+        <input type="file" id="C-file-input" accept=".json" multiple class="hidden">
+      </div>
+      <div id="C-upload-log" class="mt-3 text-xs text-ink-2 space-y-1"></div>
+    </div>
+
+    <!-- 子模式切换 -->
+    <div class="border-b-2 border-ink flex items-end">
+      <button data-sub="score" class="C-sub-btn tab-btn tab-active"><span class="tab-num">01</span>分数推荐</button>
+      <button data-sub="trend" class="C-sub-btn tab-btn"><span class="tab-num">02</span>院校历年趋势</button>
+      <button data-sub="plans" class="C-sub-btn tab-btn"><span class="tab-num">03</span>招生计划全表</button>
+    </div>
+  </section>
+
+  <!-- 子视图 1：分数推荐 -->
+  <section id="C-score" class="C-sub-view space-y-10">
+
+    <!-- 96 志愿策略说明 -->
+    <div class="card-flat p-6 border-l-4 border-accent">
+      <div class="text-xs text-accent tracking-wide2 uppercase mb-2">2026 新高考 · 96 志愿填报策略</div>
+      <h3 class="display-hero text-xl mb-3">"专业（类）+ 学校"模式 · 冲 40 / 稳 35 / 保 25</h3>
+      <p class="text-ink-2 text-[14px] leading-[1.75] mb-4">
+        新高考实行"专业（类）+ 学校"志愿模式，每位考生最多可填报 <span class="num font-medium">96</span> 个志愿。核心在于合理分配三档比例，降低退档风险并最大化分数价值。
+      </p>
+      <div class="grid grid-cols-3 gap-6 mt-5 pt-5 border-t border-line">
+        <div>
+          <div class="flex items-baseline gap-2 mb-1">
+            <span class="display-num text-3xl text-push">40</span>
+            <span class="text-xs text-ink-3">个志愿</span>
+            <span class="pill pill-push ml-auto">冲</span>
+          </div>
+          <p class="text-xs text-ink-2 leading-relaxed">录取位次比你高 <span class="num">15%-50%</span> 的院校专业，难度大但有希望，敢于尝试。</p>
+        </div>
+        <div>
+          <div class="flex items-baseline gap-2 mb-1">
+            <span class="display-num text-3xl text-warn">35</span>
+            <span class="text-xs text-ink-3">个志愿</span>
+            <span class="pill pill-warn ml-auto">稳</span>
+          </div>
+          <p class="text-xs text-ink-2 leading-relaxed">录取位次与你相近 <span class="num">±15%</span>，命中概率高，是志愿主体。</p>
+        </div>
+        <div>
+          <div class="flex items-baseline gap-2 mb-1">
+            <span class="display-num text-3xl text-safe">25</span>
+            <span class="text-xs text-ink-3">个志愿</span>
+            <span class="pill pill-safe ml-auto">保</span>
+          </div>
+          <p class="text-xs text-ink-2 leading-relaxed">录取位次比你低 <span class="num">15%-80%</span> 的院校专业，确保有学可上，兜底防滑档。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 输入区 -->
+    <div class="card-flat p-8 border border-line">
+      <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-6">输入你的分数与位次</div>
+      <div class="grid grid-cols-12 gap-6 items-end">
+        <div class="col-span-5">
+          <label class="text-xs text-ink-3 mb-1 block">高考分数</label>
+          <input id="C-input-score" type="number" placeholder="例如 580" class="input-line w-full text-3xl display-num">
+        </div>
+        <div class="col-span-5">
+          <label class="text-xs text-ink-3 mb-1 block">已知位次（可选 · 不填将根据分数自动估算）</label>
+          <input id="C-input-rank" type="number" placeholder="不填即自动换算" class="input-line w-full text-3xl display-num">
+        </div>
+        <div class="col-span-2">
+          <button id="C-btn-recommend" class="btn-primary w-full justify-center">查询推荐</button>
+        </div>
+      </div>
+      <div class="mt-6 pt-6 border-t border-line flex flex-wrap items-center gap-4 text-sm">
+        <span class="text-xs text-ink-3 tracking-wide2 uppercase">参考年份</span>
+        <div id="C-ref-years" class="flex gap-1"></div>
+        <span class="text-line-2">|</span>
+        <label class="flex items-center gap-2 cursor-pointer text-xs text-ink-2">
+          <input type="checkbox" id="C-only-bk" class="accent-ink" checked>
+          <span>仅看本科批</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 推荐结果 -->
+    <div id="C-rec-empty" class="border border-dashed border-line-2 p-16 text-center">
+      <div class="display-hero text-xl mb-2">输入分数后查看推荐</div>
+      <p class="text-sm text-ink-3 max-w-md mx-auto">系统按 2025 一分一段表换算位次，再按你选择的参考年份匹配 <span class="text-push">冲</span> · <span class="text-warn">稳</span> · <span class="text-safe">保</span> 三档。</p>
+    </div>
+    <div id="C-rec-result" class="hidden space-y-10"></div>
+  </section>
+
+  <!-- 子视图 2：院校趋势 -->
+  <section id="C-trend" class="C-sub-view hidden space-y-8">
+    <div class="card-flat p-8 border border-line">
+      <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">查询某所院校在青海的历年录取数据</div>
+      <div class="relative">
+        <input id="C-school-search" type="search" placeholder="输入学校名称" class="input-line w-full text-2xl display-num">
+        <div id="C-school-suggest" class="absolute left-0 right-0 top-full mt-1 bg-white border border-line max-h-72 overflow-auto scroll-thin z-20 hidden"></div>
+      </div>
+    </div>
+    <div id="C-trend-result"></div>
+  </section>
+
+  <!-- 子视图 3：招生计划 -->
+  <section id="C-plans" class="C-sub-view hidden">
+    <div class="grid grid-cols-12 gap-10">
+      <aside class="col-span-3 space-y-8">
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">年份</h3>
+          <div id="C-plan-years" class="flex flex-wrap gap-1"></div>
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">关键词</h3>
+          <input id="C-search" type="search" placeholder="学校 / 专业 / 备注" class="input-line w-full">
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">批次</h3>
+          <div id="C-batches" class="flex flex-wrap gap-1"></div>
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">学校所在省</h3>
+          <div id="C-provinces" class="flex flex-wrap gap-1 max-h-44 overflow-auto scroll-thin"></div>
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">学校所在城市</h3>
+          <div id="C-cities" class="flex flex-wrap gap-1 max-h-32 overflow-auto scroll-thin text-xs text-ink-3">先选省份</div>
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">专业类</h3>
+          <div id="C-mcats" class="flex flex-wrap gap-1 max-h-44 overflow-auto scroll-thin"></div>
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">选科要求</h3>
+          <div id="C-reqs" class="flex flex-wrap gap-1 max-h-32 overflow-auto scroll-thin"></div>
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">招生类型</h3>
+          <div id="C-types" class="flex flex-wrap gap-1"></div>
+        </div>
+        <div>
+          <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">学费 / 年</h3>
+          <div class="flex items-center gap-2">
+            <input id="C-fee-min" type="number" placeholder="最低" class="input-line w-full text-sm">
+            <span class="text-ink-3">—</span>
+            <input id="C-fee-max" type="number" placeholder="最高" class="input-line w-full text-sm">
+          </div>
+        </div>
+        <button id="C-reset" class="text-xs text-ink-3 hover:text-accent border-b border-dotted border-ink-4">清空筛选</button>
+      </aside>
+      <section class="col-span-9">
+        <div class="flex items-end justify-between mb-6 pb-3 border-b-2 border-ink">
+          <div>
+            <h2 class="display-hero text-2xl">招生计划 <span id="C-count" class="text-ink-3 text-sm font-normal num"></span></h2>
+            <p class="text-xs text-ink-3 mt-1" id="C-plansum">—</p>
+          </div>
+          <div class="flex items-center gap-3 text-sm">
+            <select id="C-group" class="bg-transparent border-b border-line-2 py-1 pr-6 cursor-pointer">
+              <option value="flat">平铺</option>
+              <option value="school">按院校</option>
+              <option value="major">按专业</option>
+            </select>
+            <select id="C-sort" class="bg-transparent border-b border-line-2 py-1 pr-6 cursor-pointer">
+              <option value="school">按院校</option>
+              <option value="plan-desc">计划数 ↓</option>
+              <option value="plan-asc">计划数 ↑</option>
+              <option value="fee-desc">学费 ↓</option>
+              <option value="fee-asc">学费 ↑</option>
+            </select>
+          </div>
+        </div>
+        <div id="C-list" class="space-y-0"></div>
+        <div id="C-pager" class="mt-10 flex items-center justify-center gap-2"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<!-- ============= 模式 D：大学专业顾问 ============= -->
+<main id="tab-D" class="max-w-[1280px] mx-auto px-8 py-10 hidden">
+  <section class="grid grid-cols-12 gap-10">
+
+    <!-- 左侧：配置 -->
+    <aside class="col-span-3 space-y-6">
+      <div>
+        <h2 class="display-hero text-2xl mb-1">大学专业顾问</h2>
+        <p class="text-xs text-ink-3 leading-relaxed">接入任意兼容 OpenAI API 的 AI 大模型，系统提示词已固定为高考志愿专家角色，无需额外设置。</p>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">API Base URL</label>
+          <input id="D-api-base" type="text" value="https://api.openai.com/v1" class="input-line w-full text-sm" placeholder="https://api.openai.com/v1">
+          <p class="text-xs text-ink-4 mt-1">兼容 OpenAI 格式的任意服务均可（Claude、Gemini、Qwen、DeepSeek 等）</p>
+        </div>
+        <div>
+          <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">API Key</label>
+          <input id="D-api-key" type="password" class="input-line w-full text-sm" placeholder="sk-...">
+          <p class="text-xs text-ink-4 mt-1">密钥仅存于本地浏览器，不会上传至任何服务器</p>
+        </div>
+        <div>
+          <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">模型名称</label>
+          <input id="D-model" type="text" value="gpt-4o" class="input-line w-full text-sm" placeholder="gpt-4o / claude-opus-4-6 / deepseek-chat">
+        </div>
+        <button id="D-save-config" class="btn-primary w-full justify-center">保存配置并连接</button>
+        <div id="D-status" class="text-xs mt-1"></div>
+      </div>
+      <div class="border-t border-line pt-4">
+        <div class="text-xs text-ink-3 tracking-wide2 uppercase mb-2">顾问能力</div>
+        <ul class="text-xs text-ink-2 space-y-1.5 leading-relaxed">
+          <li>· 专业深度分析（课程/难度/就业）</li>
+          <li>· 专业真伪与前景判断</li>
+          <li>· 志愿规划与96志愿设计</li>
+          <li>· 冲/稳/保/垫梯度建议</li>
+        </ul>
+      </div>
+      <button id="D-clear-chat" class="text-xs text-ink-3 hover:text-accent border-b border-dotted border-ink-4">清空对话记录</button>
+    </aside>
+
+    <!-- 右侧：对话区 -->
+    <section class="col-span-9 flex flex-col" style="height: calc(100vh - 200px); min-height: 500px;">
+      <div class="flex items-end justify-between mb-4 pb-3 border-b-2 border-ink">
+        <h2 class="display-hero text-2xl">专业顾问对话</h2>
+        <p class="text-xs text-ink-3">系统提示词已固定 · 不可修改 · 确保专业性</p>
+      </div>
+
+      <!-- 消息列表 -->
+      <div id="D-chat-messages" class="flex-1 overflow-y-auto scroll-thin space-y-2 pr-2 mb-4 min-h-0">
+        <div class="flex justify-start">
+          <div class="max-w-[80%] px-4 py-3 text-sm leading-relaxed bg-white border border-line text-ink-2">
+            请先在左侧填写 API Key 并保存配置，顾问即可开始为你服务。<br><br>
+            <b>建议提供以下信息获得最准确的建议：</b><br>
+            · 所在省份 · 选科 · 分数/位次<br>
+            · 感兴趣的学校名称 + 专业名称<br>
+            · 家庭预算、城市偏好、未来方向
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入区 -->
+      <div class="border-t-2 border-ink pt-4">
+        <div class="flex gap-3 items-end">
+          <textarea id="D-user-input" rows="3"
+            placeholder="输入你的问题，例如：帮我分析北京大学软件工程专业值不值得报 / 我是青海考生，物理化学，580分，帮我规划96个志愿…"
+            class="flex-1 resize-none border border-line bg-white px-4 py-3 text-sm outline-none focus:border-ink transition-colors leading-relaxed"></textarea>
+          <button id="D-send-btn" class="btn-primary self-end px-6 py-3">发送</button>
+        </div>
+        <p class="text-xs text-ink-4 mt-2">Enter 发送 · Shift+Enter 换行</p>
+      </div>
+    </section>
+
+  </section>
+</main>
+
+<footer class="max-w-[1280px] mx-auto px-8 py-12 mt-16 border-t border-line text-xs text-ink-3 leading-relaxed">
+  <div class="grid grid-cols-12 gap-8">
+    <div class="col-span-4">
+      <div class="display-hero text-base text-ink mb-2">数据来源</div>
+      <ul class="space-y-1">
+        <li>教育部《全国普通高等学校名单》(2021)</li>
+        <li>《普通高等学校本科专业目录》(2026)</li>
+        <li>985 / 211 / 双一流官方公示名单</li>
+        <li>用户自行上传的省份录取数据与一分一段表</li>
+      </ul>
+    </div>
+    <div class="col-span-4">
+      <div class="display-hero text-base text-ink mb-2">使用边界</div>
+      <ul class="space-y-1">
+        <li>"开设专业""优势专业"为基于学校类型的启发式推断</li>
+        <li>分数推荐基于历年位次比例，仅供参考</li>
+        <li>最终请以学校招生章程与省教育考试院公告为准</li>
+        <li>本工具不替代专业志愿填报咨询</li>
+      </ul>
+    </div>
+    <div class="col-span-4">
+      <div class="display-hero text-base text-ink mb-2">关于</div>
+      <p>智慧大学是一个为高中毕业生准备的志愿决策参考工具，所有数据为公开来源，本站不收集任何用户信息。</p>
+      <p class="mt-2 text-ink-4 num">v2.0 · 2026</p>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js?v=5"></script>
+</body>
+</html>
