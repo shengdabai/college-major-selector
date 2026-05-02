@@ -107,6 +107,13 @@ async function loadAll() {
   renderA();
   renderCompareBar();
   initStickyBrand();
+
+  // URL参数 ?tab=B/C/D 用于截图
+  const urlTab = new URLSearchParams(location.search).get('tab');
+  if (urlTab) {
+    const btn = document.querySelector(`[data-tab="${urlTab}"]`);
+    if (btn) btn.click();
+  }
 }
 
 // 顶部 sticky brand：滚出 hero 后才显示，让 sticky 条更紧凑
