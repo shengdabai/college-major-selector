@@ -2,6 +2,16 @@
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
 
+// 安全工具：HTML 转义，防止 XSS 注入
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const state = {
   unis: [],
   majors: [],          // 学科门类（嵌套）
@@ -498,7 +508,7 @@ async function handleDataFiles(files) {
       state.C.planYear = loaded.at(-1) || year;
       results.push(`✓ ${file.name}：${year} 年数据加载成功（${(data.plans||[]).length} 条计划 · ${(data.majorScores||[]).length} 条专业分）`);
     } catch(e) {
-      results.push(`✗ ${file.name}：解析失败 — ${e.message}`);
+      results.push(`✗ ${escapeHtml(file.name)}：解析失败 — ${escapeHtml(e.message)}`);
     }
   }
   // 显示结果
@@ -702,7 +712,7 @@ function initTrendSearch() {
     const sug = $('#C-school-suggest');
     if (!k) { sug.classList.add('hidden'); return; }
     const matched = list.filter(n => n.includes(k)).slice(0, 50);
-    sug.innerHTML = matched.map(n => `<div data-sn="${n}" class="px-4 py-2 hover:bg-paper-100 cursor-pointer text-sm">${n}</div>`).join('') || '<div class="px-4 py-3 text-ink-3 text-sm">未找到</div>';
+    sug.innerHTML = matched.map(n => `<div data-sn="${escapeHtml(n)}" class="px-4 py-2 hover:bg-paper-100 cursor-pointer text-sm">${escapeHtml(n)}</div>`).join('') || '<div class="px-4 py-3 text-ink-3 text-sm">未找到</div>';
     sug.classList.remove('hidden');
   };
   $('#C-school-suggest').onclick = e => {
@@ -1740,5 +1750,5 @@ function removeLoadingBubble() {
 // 启动
 loadAll().catch(err => {
   console.error(err);
-  $('#loading').innerHTML = `<div class="text-rose-600">加载失败：${err.message}<br><span class="text-xs text-ink-3">请通过本地服务器访问，不要直接 file:// 打开（fetch 会被浏览器拦截）。在项目目录运行 <code class="bg-paper-100 px-1.5 py-0.5 rounded">python3 -m http.server 8000</code> 后访问 http://localhost:8000/</span></div>`;
+  $('#loading').innerHTML = `<div class="text-rose-600">加载失败：${escapeHtml(err.message)}<br><span class="text-xs text-ink-3">请通过本地服务器访问，不要直接 file:// 打开（fetch 会被浏览器拦截）。在项目目录运行 <code class="bg-paper-100 px-1.5 py-0.5 rounded">python3 -m http.server 8000</code> 后访问 http://localhost:8000/</span></div>`;
 });
