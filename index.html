@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <meta name="description" content="智慧大学 · 高考志愿决策参考">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>智慧大学 · 高考志愿决策参考</title>
@@ -136,7 +137,7 @@ tailwind.config = {
       <div class="col-span-5">
         <div class="border-l border-line-2 pl-6">
           <div class="flex items-center gap-2 mb-2">
-            <div class="text-xs text-ink-3 tracking-wide2 uppercase">四种使用方式</div>
+            <div class="text-xs text-ink-3 tracking-wide2 uppercase">五种使用方式</div>
             <button onclick="exportCurrentCSV()" class="btn-ghost ml-auto">下载 CSV</button>
           </div>
           <ol class="space-y-1 text-[13px]">
@@ -144,6 +145,7 @@ tailwind.config = {
             <li><span class="num-display text-ink-3 mr-2">02</span>从你想读的<b>专业</b>反查 → 找学校</li>
             <li><span class="num-display text-ink-3 mr-2">03</span>上传录取数据 → <b>冲稳保推荐</b>（支持任意省份）</li>
             <li><span class="num-display text-ink-3 mr-2">04</span>接入 AI 大模型 → <b>大学专业顾问</b>问答</li>
+            <li><span class="num-display text-ink-3 mr-2">05</span>查<b>各省志愿规则</b> → 按本省要求填报</li>
           </ol>
           <div class="mt-3 pt-3 border-t border-line flex items-center gap-4 text-xs text-ink-3">
             <span><span class="num-display text-ink text-sm mr-1" id="stat-uni">—</span>所院校</span>
@@ -166,6 +168,7 @@ tailwind.config = {
       <button data-tab="B" class="tab-btn !py-3"><span class="tab-num">02</span>专业 · 地域 · 学校</button>
       <button data-tab="C" class="tab-btn !py-3"><span class="tab-num">03</span>录取数据 · 分数 · 推荐</button>
       <button data-tab="D" class="tab-btn !py-3"><span class="tab-num">04</span>大学专业顾问</button>
+      <button data-tab="E" class="tab-btn !py-3"><span class="tab-num">05</span>各省志愿规则</button>
     </nav>
   </div>
 </div>
@@ -252,7 +255,7 @@ tailwind.config = {
   </section>
 </main>
 
-<!-- ============= 模式 C：青海高考 ============= -->
+<!-- ============= 模式 C：本省录取数据 · 分数推荐（用户上传） ============= -->
 <main id="tab-C" class="max-w-[1280px] mx-auto px-8 py-10 hidden">
 
   <!-- 模式 C 头部 -->
@@ -281,6 +284,10 @@ tailwind.config = {
         <p class="text-xs text-ink-3">支持同时上传多个年份 · 文件名需含4位数字年份（如 <code class="bg-paper-100 px-1">2024.json</code>）</p>
         <input type="file" id="C-file-input" accept=".json" multiple class="hidden">
       </div>
+      <div class="mt-3 flex items-center gap-4 text-xs">
+        <button type="button" onclick="downloadSampleJSON()" class="text-accent border-b border-accent hover:opacity-70">↓ 下载 JSON 模板/示例</button>
+        <span class="text-ink-3">不知道格式？先下载模板照着填即可。数据只在本地浏览器解析，不上传服务器。</span>
+      </div>
       <div id="C-upload-log" class="mt-3 text-xs text-ink-2 space-y-1"></div>
     </div>
 
@@ -297,10 +304,10 @@ tailwind.config = {
 
     <!-- 96 志愿策略说明 -->
     <div class="card-flat p-6 border-l-4 border-accent">
-      <div class="text-xs text-accent tracking-wide2 uppercase mb-2">2026 新高考 · 96 志愿填报策略</div>
-      <h3 class="display-hero text-xl mb-3">"专业（类）+ 学校"模式 · 冲 40 / 稳 35 / 保 25</h3>
+      <div class="text-xs text-accent tracking-wide2 uppercase mb-2">新高考 · 冲稳保填报策略</div>
+      <h3 class="display-hero text-xl mb-3">三档比例 · 冲 ≈42% / 稳 ≈36% / 保 ≈22%</h3>
       <p class="text-ink-2 text-[14px] leading-[1.75] mb-4">
-        新高考实行"专业（类）+ 学校"志愿模式，每位考生最多可填报 <span class="num font-medium">96</span> 个志愿。核心在于合理分配三档比例，降低退档风险并最大化分数价值。
+        新高考多采用"专业（类）+ 学校"或"院校专业组"志愿模式，<b>各省平行志愿数量不同</b>（如山东/河北 96 个、湖北/湖南/广东 45 个院校专业组、北京 30 个、浙江 80 个等，详见 <button onclick="document.querySelector('[data-tab=&quot;E&quot;]').click()" class="text-accent border-b border-accent">05 各省志愿规则</button>）。核心在于合理分配三档比例，降低退档风险。下方推荐数量会按你上传数据所属省份自动调整。
       </p>
       <div class="grid grid-cols-3 gap-6 mt-5 pt-5 border-t border-line">
         <div>
@@ -368,7 +375,7 @@ tailwind.config = {
   <!-- 子视图 2：院校趋势 -->
   <section id="C-trend" class="C-sub-view hidden space-y-8">
     <div class="card-flat p-8 border border-line">
-      <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">查询某所院校在青海的历年录取数据</div>
+      <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">查询某所院校在本省（已上传数据）的历年录取数据</div>
       <div class="relative">
         <input id="C-school-search" type="search" placeholder="输入学校名称" class="input-line w-full text-2xl display-num">
         <div id="C-school-suggest" class="absolute left-0 right-0 top-full mt-1 bg-white border border-line max-h-72 overflow-auto scroll-thin z-20 hidden"></div>
@@ -459,13 +466,31 @@ tailwind.config = {
     <aside class="col-span-3 space-y-6">
       <div>
         <h2 class="display-hero text-2xl mb-1">大学专业顾问</h2>
-        <p class="text-xs text-ink-3 leading-relaxed">接入任意兼容 OpenAI API 的 AI 大模型，系统提示词已固定为高考志愿专家角色，无需额外设置。</p>
+        <p class="text-xs text-ink-3 leading-relaxed">接入任意兼容 OpenAI API 的 AI 大模型，系统提示词已固定为高考志愿专家角色，无需额外设置。默认示例为 OpenAI（ChatGPT），<b>也可一键切换为国内主流大模型 API</b>（DeepSeek / 通义千问 / Kimi / 智谱 GLM / 豆包 / 文心 / 混元 / MiniMax 等），或填入任意自建/代理服务。</p>
       </div>
       <div class="space-y-4">
         <div>
+          <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">服务商快选</label>
+          <select id="D-provider" class="input-line w-full text-sm cursor-pointer">
+            <option value="">— 选择后自动填入下方地址与模型 —</option>
+            <option value="openai">OpenAI（ChatGPT）</option>
+            <option value="deepseek">DeepSeek 深度求索</option>
+            <option value="dashscope">阿里云百炼 · 通义千问 Qwen</option>
+            <option value="moonshot">Moonshot · Kimi</option>
+            <option value="zhipu">智谱 AI · GLM</option>
+            <option value="volc">火山方舟 · 豆包 Doubao</option>
+            <option value="baidu">百度千帆 · 文心 ERNIE</option>
+            <option value="hunyuan">腾讯混元 Hunyuan</option>
+            <option value="minimax">MiniMax</option>
+            <option value="siliconflow">硅基流动 SiliconFlow（聚合）</option>
+            <option value="custom">自定义 / 其他代理</option>
+          </select>
+          <p class="text-xs text-ink-4 mt-1">国内 API 多为 OpenAI 兼容格式，选择后只需填入对应的 API Key。</p>
+        </div>
+        <div>
           <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">API Base URL</label>
           <input id="D-api-base" type="text" value="https://api.openai.com/v1" class="input-line w-full text-sm" placeholder="https://api.openai.com/v1">
-          <p class="text-xs text-ink-4 mt-1">兼容 OpenAI 格式的任意服务均可（Claude、Gemini、Qwen、DeepSeek 等）</p>
+          <p class="text-xs text-ink-4 mt-1">兼容 OpenAI 格式的任意服务均可（OpenAI、DeepSeek、Qwen、Kimi、GLM、豆包、文心 等）</p>
         </div>
         <div>
           <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">API Key</label>
@@ -474,7 +499,7 @@ tailwind.config = {
         </div>
         <div>
           <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">模型名称</label>
-          <input id="D-model" type="text" value="gpt-4o" class="input-line w-full text-sm" placeholder="gpt-4o / claude-opus-4-6 / deepseek-chat">
+          <input id="D-model" type="text" value="gpt-4o" class="input-line w-full text-sm" placeholder="gpt-4o / deepseek-chat / qwen-max / moonshot-v1-8k">
         </div>
         <button id="D-save-config" class="btn-primary w-full justify-center">保存配置并连接</button>
         <div id="D-status" class="text-xs mt-1"></div>
@@ -515,7 +540,7 @@ tailwind.config = {
       <div class="border-t-2 border-ink pt-4">
         <div class="flex gap-3 items-end">
           <textarea id="D-user-input" rows="3"
-            placeholder="输入你的问题，例如：帮我分析北京大学软件工程专业值不值得报 / 我是青海考生，物理化学，580分，帮我规划96个志愿…"
+            placeholder="输入你的问题，例如：帮我分析北京大学软件工程专业值不值得报 / 我是XX省考生，物理+化学，580分，帮我规划志愿…"
             class="flex-1 resize-none border border-line bg-white px-4 py-3 text-sm outline-none focus:border-ink transition-colors leading-relaxed"></textarea>
           <button id="D-send-btn" class="btn-primary self-end px-6 py-3">发送</button>
         </div>
@@ -523,6 +548,39 @@ tailwind.config = {
       </div>
     </section>
 
+  </section>
+</main>
+
+<!-- ============= 模式 E：各省志愿填报规则 ============= -->
+<main id="tab-E" class="max-w-[1280px] mx-auto px-8 py-10 hidden">
+  <section class="mb-8">
+    <div class="grid grid-cols-12 gap-8 mb-6 items-end">
+      <div class="col-span-8">
+        <div class="text-xs text-accent tracking-wide2 uppercase mb-2">全国 31 省 · 高考与志愿规则速查</div>
+        <h1 class="display-hero text-[36px] mb-2">按你所在省份的规则填报</h1>
+        <p class="text-ink-2 text-[15px] leading-[1.7]">
+          各省高考模式（3+3 / 3+1+2 / 传统文理）、志愿模式（院校专业组 / 专业+院校）、平行志愿数量、批次设置各不相同。
+          先选你所在的省份，了解本省规则；再回到 <b>03 录取数据</b> 上传本省数据，系统会按你省的平行志愿数量给出冲稳保推荐。
+        </p>
+      </div>
+      <div class="col-span-4">
+        <div class="border-l border-line-2 pl-6 text-xs text-ink-3">
+          <p class="leading-relaxed">规则数据为公开信息整理，仅供参考。报考请以本省教育考试院当年正式公告为准。</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">选择省份</h3>
+      <div id="E-province-grid" class="flex flex-wrap gap-1.5"></div>
+    </div>
+  </section>
+  <section>
+    <div id="E-rule-detail">
+      <div class="border border-dashed border-line-2 p-16 text-center">
+        <div class="display-hero text-xl mb-2">选择一个省份查看志愿规则</div>
+        <p class="text-sm text-ink-3 max-w-md mx-auto">将显示该省的高考模式、志愿模式、平行志愿数量、批次设置与官方查询入口。</p>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -534,6 +592,7 @@ tailwind.config = {
         <li>教育部《全国普通高等学校名单》(2021)</li>
         <li>《普通高等学校本科专业目录》(2026)</li>
         <li>985 / 211 / 双一流官方公示名单</li>
+        <li>各省志愿规则：公开信息整理，以各省考试院公告为准</li>
         <li>用户自行上传的省份录取数据与一分一段表</li>
       </ul>
     </div>
@@ -548,12 +607,12 @@ tailwind.config = {
     </div>
     <div class="col-span-4">
       <div class="display-hero text-base text-ink mb-2">关于</div>
-      <p>智慧大学是一个为高中毕业生准备的志愿决策参考工具，所有数据为公开来源，本站不收集任何用户信息。</p>
-      <p class="mt-2 text-ink-4 num">v2.0 · 2026</p>
+      <p>智慧大学是一个为高中毕业生准备的志愿决策参考工具，所有数据为公开来源，本站不收集任何用户信息，录取数据完全由用户在本地上传、不经过任何服务器。</p>
+      <p class="mt-2 text-ink-4 num">v3.0 · 2026 · 全国通用版</p>
     </div>
   </div>
 </footer>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

@@ -2,15 +2,18 @@
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
 
-// 安全工具：HTML 转义，防止 XSS 注入
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+// HTML 转义：用户上传的录取 JSON 中的字符串字段插入 innerHTML 前必须转义，防 XSS。
+// 覆盖文本与属性两种上下文（含引号），用于 school/major/note/batch/req 等用户可控字段。
+function esc(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+// 类型规范化：用户上传的 JSON 字段类型不可信，统一强制为字符串/数字，
+// 避免下游 .replace()/.toLowerCase()/.localeCompare()/.includes()/.toLocaleString() 因 null/数字/对象崩溃。
+const S = v => (v == null ? '' : String(v));
+const N = v => (Number.isFinite(+v) ? +v : 0);
 
 const state = {
   unis: [],
@@ -42,8 +45,11 @@ const state = {
   },
   // 对比
   compare: new Set(JSON.parse(localStorage.getItem('compare') || '[]')),
-  // 模式 C：青海历年（仅物理类/理科）
-  qh: { 2022:null, 2023:null, 2024:null, 2025:null, 2026:null },
+  // 模式 C：用户上传的本省历年录取数据（key = 年份）
+  // 兼容任意省份 / 任意科类，字段由上传的 JSON _meta 决定
+  yearData: { 2022:null, 2023:null, 2024:null, 2025:null, 2026:null },
+  // 当前数据省份与科类（从上传 JSON 的 _meta 推断，用于界面文案）
+  dataMeta: { province: '', subject: '' },
   C: {
     sub: 'score',           // score / trend / plans
     // 分数推荐
@@ -323,18 +329,19 @@ function exportCurrentCSV() {
   if (!$('#tab-C').classList.contains('hidden')) visible = 'C';
   else if (!$('#tab-B').classList.contains('hidden')) visible = 'B';
 
-  // 模式 C：导出青海招生计划
+  // 模式 C：导出本省招生计划
   if (visible === 'C') {
     const arr = filterC();
     if (!arr.length) { alert('当前筛选没有结果可导出'); return; }
     const headers = ['年份','院校','院校代码','专业','专业代码','专业类','专业备注','科目','选科要求','类型','批次','计划人数','学制','学费','外语','阳光高考链接'];
     const rows = [headers];
     for (const p of arr) {
-      rows.push([state.C.year, p.school, p.sCode, p.major, p.mCode, p.mCat, p.note,
+      rows.push([state.C.planYear, p.school, p.sCode, p.major, p.mCode, p.mCat, p.note,
         p.subject, p.req || '不限', p.type || '普通', p.batch, p.plan, p.years,
         p.fee || '', p.lang, chsiSchoolUrl(p.school)]);
     }
-    downloadCSV(`青海${state.C.year}招生计划-筛选-${new Date().toISOString().slice(0,10)}.csv`, rows);
+    const prov = state.yearData[state.C.planYear]?._meta?.province || '本省';
+    downloadCSV(`${prov}${state.C.planYear}招生计划-筛选-${new Date().toISOString().slice(0,10)}.csv`, rows);
     return;
   }
 
@@ -395,29 +402,39 @@ function exportCompareCSV() {
 }
 window.exportCompareCSV = exportCompareCSV;
 
-// ===================== 模式 C：省份录取数据（通用版·用户自行上传） =====================
-// state.qh 存储用户上传的各年份数据，key = 年份数字
-// 数据格式与青海版相同：{ plans, majorScores, schoolScores, rankTable, _meta }
-// 用户需通过 parse_qinghai_history.py 脚本生成对应省份的 JSON 文件后上传
+// ===================== 模式 C：本省录取数据（通用版·用户自行上传） =====================
+// state.yearData 存储用户上传的各年份数据，key = 年份数字，适用于任意省份 / 任意科类
+// 数据格式：{ plans, majorScores, schoolScores, rankTable, _meta }
+// 用户参照 scripts/build_admission_json.py（或下载站内 JSON 模板）生成本省 JSON 后上传
 
-function qhData(year) {
-  const d = state.qh[year];
+function yearOf(year) {
+  const d = state.yearData[year];
   if (!d) return { plans: [], majorScores: [], schoolScores: [], rankTable: [], _placeholder: true };
   return d;
 }
-function qhAvail(year) {
-  const d = state.qh[year];
+function yearAvail(year) {
+  const d = state.yearData[year];
   return !!d && !d._placeholder && (d.plans?.length || d.majorScores?.length || d.rankTable?.length);
 }
 
 // 已加载的年份（动态，由用户上传决定）
 function getLoadedYears() {
-  return Object.keys(state.qh).map(Number).filter(y => qhAvail(y)).sort();
+  return Object.keys(state.yearData).map(Number).filter(y => yearAvail(y)).sort();
 }
-const QH_YEARS = [2022, 2023, 2024, 2025]; // 兼容旧引用，实际使用 getLoadedYears()
+// 当前数据的省份 / 科类文案（从任一已加载年份的 _meta 推断）
+function dataScopeLabel() {
+  const ys = getLoadedYears();
+  for (const y of ys) {
+    const m = state.yearData[y]?._meta;
+    if (m && (m.province || m.subject)) {
+      return esc([m.province, m.subject].filter(Boolean).join(' · '));
+    }
+  }
+  return '本省录取数据';
+}
 
 function scoreToRank(year, score) {
-  const d = qhData(year);
+  const d = yearOf(year);
   if (!d.rankTable?.length) return null;
   for (const row of d.rankTable) {
     if (row.score <= score) return row.cum;
@@ -425,7 +442,7 @@ function scoreToRank(year, score) {
   return d.rankTable.at(-1).cum;
 }
 function rankToScore(year, rank) {
-  const d = qhData(year);
+  const d = yearOf(year);
   if (!d.rankTable?.length) return null;
   for (const row of d.rankTable) {
     if (row.cum >= rank) return row.score;
@@ -433,8 +450,8 @@ function rankToScore(year, rank) {
   return d.rankTable.at(-1).score;
 }
 function rankToEquivalent(refRank, refYear, targetYear) {
-  const refTotal = qhData(refYear).rankTable.at(-1)?.cum || 1;
-  const tgtTotal = qhData(targetYear).rankTable.at(-1)?.cum || 1;
+  const refTotal = yearOf(refYear).rankTable.at(-1)?.cum || 1;
+  const tgtTotal = yearOf(targetYear).rankTable.at(-1)?.cum || 1;
   return Math.round(refRank * tgtTotal / refTotal);
 }
 
@@ -478,8 +495,8 @@ function renderCDataStatus() {
     return;
   }
   const cells = loaded.map(y => {
-    const d = state.qh[y];
-    return `<div class="text-ink-2"><span class="num text-ink mr-1">${y}</span>${(d._meta?.plans||0).toLocaleString()} 计划 · ${(d._meta?.majorScores||0).toLocaleString()} 专业分</div>`;
+    const d = state.yearData[y];
+    return `<div class="text-ink-2"><span class="num text-ink mr-1">${y}</span>${(+d._meta?.plans||0).toLocaleString()} 计划 · ${(+d._meta?.majorScores||0).toLocaleString()} 专业分</div>`;
   });
   $('#C-data-status').innerHTML = cells.join('');
 }
@@ -494,21 +511,62 @@ async function handleDataFiles(files) {
       const data = JSON.parse(text);
       // 从文件名推断年份，例如 qh_2024.json 或 2024.json 或任意省份_2024.json
       const yearMatch = file.name.match(/(\d{4})/);
-      if (!yearMatch) { results.push(`⚠ ${file.name}：文件名中未找到年份（需含4位数字年份）`); continue; }
+      if (!yearMatch) { results.push(`⚠ ${esc(file.name)}：文件名中未找到年份（需含4位数字年份）`); continue; }
       const year = parseInt(yearMatch[1], 10);
-      // 验证数据格式
-      if (!data.plans && !data.majorScores && !data.rankTable) {
-        results.push(`⚠ ${file.name}：数据格式不正确，需含 plans / majorScores / rankTable 字段`);
+      // 验证数据格式：顶层须是对象
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        results.push(`⚠ ${esc(file.name)}：顶层应为 JSON 对象（含 plans / majorScores / schoolScores / rankTable）`);
         continue;
       }
-      state.qh[year] = data;
+      // 四个核心字段若存在必须是数组；缺失则补空数组，避免下游 .filter / [0] 崩溃
+      const badField = ['plans','majorScores','schoolScores','rankTable']
+        .find(k => data[k] !== undefined && !Array.isArray(data[k]));
+      if (badField) {
+        results.push(`⚠ ${esc(file.name)}：字段 ${badField} 必须是数组`);
+        continue;
+      }
+      // 过滤掉非对象数组元素（如 [null] / [1] / ["x"]），再对每个对象做字段类型规范化
+      const objArr = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+      // 招生计划：字符串字段强制字符串，计划数强制数字
+      const normPlan = p => ({
+        ...p, school:S(p.school), sCode:S(p.sCode), major:S(p.major), mCode:S(p.mCode),
+        mCat:S(p.mCat), mGroup:S(p.mGroup), note:S(p.note), subject:S(p.subject),
+        req:S(p.req), type:S(p.type), batch:S(p.batch), years:S(p.years), fee:S(p.fee),
+        lang:S(p.lang), plan:N(p.plan),
+      });
+      // 专业分 / 院校分：字符串字段强制字符串，分数/位次/线差/录取数强制数字
+      const normScore = r => ({
+        ...r, school:S(r.school), major:S(r.major), mCode:S(r.mCode), batch:S(r.batch),
+        mGroup:S(r.mGroup), type:S(r.type), owner:S(r.owner), province:S(r.province), note:S(r.note),
+        minScore:N(r.minScore), minRank:N(r.minRank), lineDiff:N(r.lineDiff), admitted:N(r.admitted),
+        is985: !!r.is985, is211: !!r.is211,
+      });
+      const rawMeta = (data._meta && typeof data._meta === 'object') ? data._meta : {};
+      const norm = {
+        _meta: { ...rawMeta, province: S(rawMeta.province), subject: S(rawMeta.subject) },
+        plans: objArr(data.plans).map(normPlan),
+        majorScores: objArr(data.majorScores).map(normScore),
+        schoolScores: objArr(data.schoolScores).map(normScore),
+        // rankTable 还要求 score 可转为有限数字（换算位次的基础），并规范 score/cum/line 类型
+        rankTable: objArr(data.rankTable).filter(x => Number.isFinite(+x.score))
+          .map(x => ({ ...x, score:N(x.score), cum:N(x.cum), line:S(x.line) })),
+      };
+      if (!norm.plans.length && !norm.majorScores.length && !norm.rankTable.length) {
+        results.push(`⚠ ${esc(file.name)}：plans / majorScores / rankTable 至少需有一项非空`);
+        continue;
+      }
+      // 补齐 _meta 统计，供数据状态展示
+      norm._meta.plans = norm._meta.plans ?? norm.plans.length;
+      norm._meta.majorScores = norm._meta.majorScores ?? norm.majorScores.length;
+      norm._meta.year = norm._meta.year ?? year;
+      state.yearData[year] = norm;
       // 更新默认参考年份
       const loaded = getLoadedYears();
       if (loaded.length) state.C.refYear = loaded.at(-1);
       state.C.planYear = loaded.at(-1) || year;
-      results.push(`✓ ${file.name}：${year} 年数据加载成功（${(data.plans||[]).length} 条计划 · ${(data.majorScores||[]).length} 条专业分）`);
+      results.push(`✓ ${esc(file.name)}：${year} 年数据加载成功（${norm.plans.length} 条计划 · ${norm.majorScores.length} 条专业分）`);
     } catch(e) {
-      results.push(`✗ ${escapeHtml(file.name)}：解析失败 — ${escapeHtml(e.message)}`);
+      results.push(`✗ ${esc(file.name)}：解析失败 — ${esc(e.message)}`);
     }
   }
   // 显示结果
@@ -527,14 +585,14 @@ function initScoreView() {
     $('#C-ref-years').innerHTML = `<span class="text-xs text-ink-3">请先上传录取数据</span>`;
     return;
   }
-  if (!qhAvail(state.C.refYear)) state.C.refYear = loaded.at(-1);
+  if (!yearAvail(state.C.refYear)) state.C.refYear = loaded.at(-1);
   $('#C-ref-years').innerHTML = loaded.map(y =>
     `<button data-ry="${y}" class="chip ${y===state.C.refYear?'chip-on':''} num">${y}</button>`
   ).join('');
   $('#C-ref-years').onclick = e => {
     const b = e.target.closest('[data-ry]'); if (!b) return;
     const y = +b.dataset.ry;
-    if (!qhAvail(y)) return;
+    if (!yearAvail(y)) return;
     state.C.refYear = y;
     initScoreView();
     if (state.C.rec) computeRecommendation();
@@ -574,7 +632,7 @@ function computeRecommendation() {
   const refRank = state.C.refYear === inputYear ? rank : rankToEquivalent(rank, inputYear, state.C.refYear);
   const refScore = rankToScore(state.C.refYear, refRank);
 
-  const refData = qhData(state.C.refYear);
+  const refData = yearOf(state.C.refYear);
   let pool = refData.majorScores.filter(r => r.minRank > 0 && r.minScore > 0);
   if (state.C.onlyBk) pool = pool.filter(r => /本科批/.test(r.batch));
 
@@ -599,10 +657,21 @@ function renderRecommendation() {
   const inputYear = r.inputYear;
   $('#C-rec-empty').classList.add('hidden');
   $('#C-rec-result').classList.remove('hidden');
-  const refDataLine = qhData(r.refYear).rankTable[0]?.line || '';
+  const refDataLine = yearOf(r.refYear).rankTable[0]?.line || '';
 
-  // 96 志愿建议数：冲 40 / 稳 35 / 保 25
-  const recCount = { chong: 40, wen: 35, bao: 25 };
+  // 建议填报数按本省平行志愿总数分配（冲 ~42% / 稳 ~36% / 保 ~22%）
+  // 省份取自上传数据的 _meta.province；规则已知用本省数量，未知则用 96 作通用参考并显式标注
+  const dataProvince = state.yearData[r.inputYear]?._meta?.province || state.yearData[r.refYear]?._meta?.province || '';
+  const provCount = provinceVoluntaryCount(dataProvince);
+  const total = provCount ?? 96;
+  const countSource = provCount != null
+    ? `按 ${esc(dataProvince)} 本科批 ${total} 个平行志愿分配`
+    : `按通用参考 ${total} 个志愿分配（未匹配到本省规则，具体数量请见「05 各省志愿规则」或本省考试院公告）`;
+  const recCount = {
+    chong: Math.round(total * 0.42),
+    wen: Math.round(total * 0.36),
+    bao: total - Math.round(total * 0.42) - Math.round(total * 0.36),
+  };
 
   const tierBlock = (key, label, range, desc, tierClass, items) => {
     const top = items.slice(0, 50);
@@ -652,7 +721,7 @@ function renderRecommendation() {
       <div class="col-span-3 pr-6">
         <div class="text-xs text-ink-3 tracking-wide2 uppercase mb-2">${r.refYear} 等效分数</div>
         <div class="display-num text-5xl">${r.refScore || '—'}</div>
-        <div class="text-xs text-ink-3 mt-1">控制线 <span class="num">${refDataLine}</span></div>
+        <div class="text-xs text-ink-3 mt-1">控制线 <span class="num">${esc(refDataLine)}</span></div>
       </div>
     </div>
 
@@ -662,7 +731,7 @@ function renderRecommendation() {
 
     <div class="text-xs text-ink-3 leading-relaxed pt-6 border-t border-line">
       <span class="tracking-wide2 uppercase mr-2">注</span>
-      推荐基于 ${r.refYear} 年真实录取数据，按位次比例匹配。每条均显示当年最低录取分与最低位次，便于横向对比。最终请以学校招生章程与省教育考试院公告为准。
+      推荐基于 ${r.refYear} 年真实录取数据，按位次比例匹配；建议填报数量${countSource}。每条均显示当年最低录取分与最低位次，便于横向对比。最终请以学校招生章程与省教育考试院公告为准。
     </div>
   `;
 }
@@ -677,20 +746,20 @@ function recRow(it, r, idx) {
       <div class="col-span-1 num text-ink-3 text-xs">${String((idx??0)+1).padStart(2,'0')}</div>
       <div class="col-span-6 min-w-0">
         <div class="flex items-center gap-2 flex-wrap mb-1">
-          <span class="display-hero text-base">${it.school}</span>
+          <span class="display-hero text-base">${esc(it.school)}</span>
           ${labels.join('')}
-          <span class="pill pill-line">${it.province}</span>
-          <span class="pill pill-soft">${it.batch}</span>
+          <span class="pill pill-line">${esc(it.province)}</span>
+          <span class="pill pill-soft">${esc(it.batch)}</span>
         </div>
-        <div class="text-sm text-ink-2">${it.major}<span class="num text-ink-4 ml-2 text-xs">${it.mCode}</span></div>
-        ${it.note?`<div class="text-xs text-ink-3 mt-0.5">${it.note}</div>`:''}
+        <div class="text-sm text-ink-2">${esc(it.major)}<span class="num text-ink-4 ml-2 text-xs">${esc(it.mCode)}</span></div>
+        ${it.note?`<div class="text-xs text-ink-3 mt-0.5">${esc(it.note)}</div>`:''}
       </div>
       <div class="col-span-2 text-right">
-        <div class="display-num text-2xl text-ink">${it.minScore}</div>
+        <div class="display-num text-2xl text-ink">${esc(it.minScore)}</div>
         <div class="text-xs text-ink-3 mt-0.5">${r.refYear} 最低分</div>
       </div>
       <div class="col-span-2 text-right">
-        <div class="num text-lg text-ink-2">${it.minRank.toLocaleString()}</div>
+        <div class="num text-lg text-ink-2">${(+it.minRank||0).toLocaleString()}</div>
         <div class="text-xs text-ink-3 mt-0.5">最低位次</div>
       </div>
       <div class="col-span-1 text-right">
@@ -703,8 +772,8 @@ function initTrendSearch() {
   const input = $('#C-school-search');
   if (!input) return;
   const allSchools = new Set();
-  for (const y of QH_YEARS) {
-    for (const r of (state.qh[y]?.schoolScores || [])) allSchools.add(r.school);
+  for (const y of getLoadedYears()) {
+    for (const r of (state.yearData[y]?.schoolScores || [])) allSchools.add(r.school);
   }
   const list = [...allSchools].sort((a,b)=>a.localeCompare(b,'zh-Hans-CN'));
   input.oninput = e => {
@@ -712,7 +781,7 @@ function initTrendSearch() {
     const sug = $('#C-school-suggest');
     if (!k) { sug.classList.add('hidden'); return; }
     const matched = list.filter(n => n.includes(k)).slice(0, 50);
-    sug.innerHTML = matched.map(n => `<div data-sn="${escapeHtml(n)}" class="px-4 py-2 hover:bg-paper-100 cursor-pointer text-sm">${escapeHtml(n)}</div>`).join('') || '<div class="px-4 py-3 text-ink-3 text-sm">未找到</div>';
+    sug.innerHTML = matched.map(n => `<div data-sn="${esc(n)}" class="px-4 py-2 hover:bg-paper-100 cursor-pointer text-sm">${esc(n)}</div>`).join('') || '<div class="px-4 py-3 text-ink-3 text-sm">未找到</div>';
     sug.classList.remove('hidden');
   };
   $('#C-school-suggest').onclick = e => {
@@ -730,8 +799,8 @@ function renderTrend() {
   const name = state.C.selectedSchool;
   if (!name) { $('#C-trend-result').innerHTML = ''; return; }
   const byYear = {};
-  for (const y of QH_YEARS) {
-    const d = state.qh[y]; if (!d) continue;
+  for (const y of getLoadedYears()) {
+    const d = state.yearData[y]; if (!d) continue;
     byYear[y] = {
       ss: (d.schoolScores || []).filter(r => r.school === name),
       ms: (d.majorScores || []).filter(r => r.school === name),
@@ -739,42 +808,41 @@ function renderTrend() {
   }
 
   let tags = '';
-  for (const y of QH_YEARS) {
+  for (const y of getLoadedYears()) {
     const r = byYear[y]?.ss[0]; if (!r) continue;
     const lab = [];
     if (r.is985) lab.push('<span class="pill level-985">985</span>');
     else if (r.is211) lab.push('<span class="pill level-211">211</span>');
-    lab.push(`<span class="pill tag-owner">${r.owner}</span>`);
-    lab.push(`<span class="pill tag-owner">${r.province}</span>`);
+    lab.push(`<span class="pill tag-owner">${esc(r.owner)}</span>`);
+    lab.push(`<span class="pill tag-owner">${esc(r.province)}</span>`);
     tags = lab.join(''); break;
   }
 
   const ssRows = [];
-  for (const y of QH_YEARS) for (const r of (byYear[y]?.ss || [])) ssRows.push({ year: y, ...r });
+  for (const y of getLoadedYears()) for (const r of (byYear[y]?.ss || [])) ssRows.push({ year: y, ...r });
   ssRows.sort((a,b) => b.year - a.year || a.batch.localeCompare(b.batch));
 
   const majorMap = new Map();
-  for (const y of QH_YEARS) {
+  for (const y of getLoadedYears()) {
     for (const r of (byYear[y]?.ms || [])) {
       const key = `${r.major}|${r.batch}|${r.mGroup||''}`;
       if (!majorMap.has(key)) majorMap.set(key, { major: r.major, batch: r.batch, mGroup: r.mGroup, mCode: r.mCode, byYear: {} });
       majorMap.get(key).byYear[y] = r;
     }
   }
-  const majorRows = [...majorMap.values()].sort((a,b) => {
-    const sa = a.byYear[2025]?.minScore || a.byYear[2024]?.minScore || a.byYear[2023]?.minScore || 0;
-    const sb = b.byYear[2025]?.minScore || b.byYear[2024]?.minScore || b.byYear[2023]?.minScore || 0;
-    return sb - sa;
-  });
+  // 用已加载年份里最新有数据的那一年作为排序依据（不再硬编码 2025）
+  const yearsDesc = getLoadedYears().slice().reverse();
+  const latestScore = byYearMap => { for (const y of yearsDesc) { const s = byYearMap[y]?.minScore; if (s) return s; } return 0; };
+  const majorRows = [...majorMap.values()].sort((a,b) => latestScore(b.byYear) - latestScore(a.byYear));
 
   $('#C-trend-result').innerHTML = `
     <div class="card-flat border border-line p-6 mb-5">
       <div class="flex items-center gap-3 flex-wrap">
-        <h2 class="font-display text-2xl font-bold">${name}</h2>
+        <h2 class="font-display text-2xl font-bold">${esc(name)}</h2>
         ${tags}
         <a href="${chsiSchoolUrl(name)}" target="_blank" rel="noopener" class="ml-auto btn-primary">阳光高考·院校 ↗</a>
       </div>
-      <p class="text-sm text-ink-3 mt-2">青海 · 物理类/理科 · 2022-2025 历年录取数据</p>
+      <p class="text-sm text-ink-3 mt-2">${dataScopeLabel()} · 历年录取数据</p>
     </div>
     ${ssRows.length ? `
     <div class="bg-white  border border-line/60 overflow-hidden mb-5">
@@ -791,12 +859,12 @@ function renderTrend() {
           </thead>
           <tbody>
             ${ssRows.map(r => `<tr class="border-t border-line hover:bg-paper/40">
-              <td class="px-4 py-2.5 font-mono">${r.year}</td><td class="px-4 py-2.5">${r.batch}</td>
-              <td class="px-4 py-2.5">${r.type || '普通类'}</td>
-              <td class="px-4 py-2.5 text-right font-display font-bold">${r.minScore}</td>
-              <td class="px-4 py-2.5 text-right">${r.minRank.toLocaleString()}</td>
-              <td class="px-4 py-2.5 text-right ${r.lineDiff>0?'text-emerald-600':r.lineDiff<0?'text-rose-500':''}">${r.lineDiff>0?'+':''}${r.lineDiff}</td>
-              <td class="px-4 py-2.5 text-right">${r.admitted || '—'}</td>
+              <td class="px-4 py-2.5 font-mono">${r.year}</td><td class="px-4 py-2.5">${esc(r.batch)}</td>
+              <td class="px-4 py-2.5">${esc(r.type || '普通类')}</td>
+              <td class="px-4 py-2.5 text-right font-display font-bold">${esc(r.minScore)}</td>
+              <td class="px-4 py-2.5 text-right">${(+r.minRank||0).toLocaleString()}</td>
+              <td class="px-4 py-2.5 text-right ${r.lineDiff>0?'text-emerald-600':r.lineDiff<0?'text-rose-500':''}">${r.lineDiff>0?'+':''}${esc(r.lineDiff)}</td>
+              <td class="px-4 py-2.5 text-right">${esc(r.admitted || '—')}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -811,23 +879,23 @@ function renderTrend() {
             <tr>
               <th class="text-left px-4 py-2.5 min-w-[180px]">专业</th>
               <th class="text-left px-4 py-2.5">批次</th>
-              ${QH_YEARS.map(y => `<th class="text-right px-4 py-2.5 min-w-[120px]">${y}</th>`).join('')}
+              ${getLoadedYears().map(y => `<th class="text-right px-4 py-2.5 min-w-[120px]">${y}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
             ${majorRows.map(m => `<tr class="border-t border-line hover:bg-paper/40">
-              <td class="px-4 py-2.5"><div class="font-medium">${m.major}</div>${m.mGroup?`<div class="text-xs text-ink-3">专业组：${m.mGroup}</div>`:''}</td>
-              <td class="px-4 py-2.5 text-xs">${m.batch}</td>
-              ${QH_YEARS.map(y => {
+              <td class="px-4 py-2.5"><div class="font-medium">${esc(m.major)}</div>${m.mGroup?`<div class="text-xs text-ink-3">专业组：${esc(m.mGroup)}</div>`:''}</td>
+              <td class="px-4 py-2.5 text-xs">${esc(m.batch)}</td>
+              ${getLoadedYears().map(y => {
                 const c = m.byYear[y];
                 if (!c) return '<td class="px-4 py-2.5 text-right text-ink-4">—</td>';
-                return `<td class="px-4 py-2.5 text-right"><div class="font-display font-bold">${c.minScore}</div><div class="text-xs text-ink-3">位次 ${c.minRank.toLocaleString()}</div></td>`;
+                return `<td class="px-4 py-2.5 text-right"><div class="font-display font-bold">${esc(c.minScore)}</div><div class="text-xs text-ink-3">位次 ${(+c.minRank||0).toLocaleString()}</div></td>`;
               }).join('')}
             </tr>`).join('')}
           </tbody>
         </table>
       </div>
-    </div>` : '<div class="bg-white border border-line/60 p-10 text-center text-ink-3">该校在青海无物理类/理科录取记录</div>'}
+    </div>` : '<div class="bg-white border border-line/60 p-10 text-center text-ink-3">该校在已上传的本省数据中无录取记录</div>'}
   `;
 }
 
@@ -841,14 +909,14 @@ function initPlanFilters() {
     $('#C-plansum').textContent = '';
     return;
   }
-  if (!qhAvail(state.C.planYear)) state.C.planYear = loaded.at(-1);
+  if (!yearAvail(state.C.planYear)) state.C.planYear = loaded.at(-1);
   $('#C-plan-years').innerHTML = loaded.map(y =>
     `<span class="chip ${y===state.C.planYear?'chip-on':''}" data-py="${y}">${y}</span>`
   ).join('');
   $('#C-plan-years').onclick = e => {
     const c = e.target.closest('[data-py]'); if (!c) return; popChip(c);
     const y = +c.dataset.py;
-    if (!qhAvail(y)) { alert(`${y} 年数据未导入`); return; }
+    if (!yearAvail(y)) { alert(`${y} 年数据未导入`); return; }
     state.C.planYear = y;
     state.C.batches = new Set(); state.C.reqs = new Set(); state.C.types = new Set();
     state.C.page = 1;
@@ -856,11 +924,11 @@ function initPlanFilters() {
     renderPlans();
   };
 
-  const cur = qhData(state.C.planYear);
+  const cur = yearOf(state.C.planYear);
   const plans = cur.plans || [];
   const bs = uniqueCounts(plans, p => p.batch);
   $('#C-batches').innerHTML = bs.map(([b,n]) =>
-    `<span class="chip ${state.C.batches.has(b)?'chip-on':''}" data-bt="${b}">${b}<span class="chip-count ml-1">${n}</span></span>`).join('');
+    `<span class="chip ${state.C.batches.has(b)?'chip-on':''}" data-bt="${esc(b)}">${esc(b)}<span class="chip-count ml-1">${n}</span></span>`).join('');
   $('#C-batches').onclick = e => {
     const c = e.target.closest('[data-bt]'); if (!c) return; popChip(c);
     const v = c.dataset.bt;
@@ -869,7 +937,7 @@ function initPlanFilters() {
   };
   const rs = uniqueCounts(plans, p => p.req || '不限').slice(0, 15);
   $('#C-reqs').innerHTML = rs.map(([r,n]) =>
-    `<span class="chip ${state.C.reqs.has(r)?'chip-on':''}" data-rq="${r}">${r}<span class="chip-count ml-1">${n}</span></span>`).join('');
+    `<span class="chip ${state.C.reqs.has(r)?'chip-on':''}" data-rq="${esc(r)}">${esc(r)}<span class="chip-count ml-1">${n}</span></span>`).join('');
   $('#C-reqs').onclick = e => {
     const c = e.target.closest('[data-rq]'); if (!c) return; popChip(c);
     const v = c.dataset.rq;
@@ -878,7 +946,7 @@ function initPlanFilters() {
   };
   const ts = uniqueCounts(plans, p => p.type || '普通类');
   $('#C-types').innerHTML = ts.map(([t,n]) =>
-    `<span class="chip ${state.C.types.has(t)?'chip-on':''}" data-cty="${t}">${t}<span class="chip-count ml-1">${n}</span></span>`).join('');
+    `<span class="chip ${state.C.types.has(t)?'chip-on':''}" data-cty="${esc(t)}">${esc(t)}<span class="chip-count ml-1">${n}</span></span>`).join('');
   $('#C-types').onclick = e => {
     const c = e.target.closest('[data-cty]'); if (!c) return; popChip(c);
     const v = c.dataset.cty;
@@ -890,7 +958,7 @@ function initPlanFilters() {
   const provinceOf = name => state.unis.find(u => u.name === name);
   const provs = uniqueCounts(plans, p => provinceOf(p.school)?.province || '其他/港澳台/未匹配');
   $('#C-provinces').innerHTML = provs.map(([p,n]) =>
-    `<span class="chip ${state.C.province===p?'chip-on':''}" data-cprv="${p}">${p}<span class="chip-count ml-1">${n}</span></span>`).join('');
+    `<span class="chip ${state.C.province===p?'chip-on':''}" data-cprv="${esc(p)}">${esc(p)}<span class="chip-count ml-1">${n}</span></span>`).join('');
   $('#C-provinces').onclick = e => {
     const c = e.target.closest('[data-cprv]'); if (!c) return; popChip(c);
     const v = c.dataset.cprv;
@@ -911,7 +979,7 @@ function initPlanFilters() {
   }
   const mc = uniqueCounts(plans, p => subByName[p.major] || '').filter(([k]) => k);
   $('#C-mcats').innerHTML = mc.slice(0, 40).map(([name,n]) =>
-    `<span class="chip ${state.C.mCats.has(name)?'chip-on':''}" data-cmct="${name}">${name}<span class="chip-count ml-1">${n}</span></span>`
+    `<span class="chip ${state.C.mCats.has(name)?'chip-on':''}" data-cmct="${esc(name)}">${esc(name)}<span class="chip-count ml-1">${n}</span></span>`
   ).join('');
   $('#C-mcats').onclick = e => {
     const c = e.target.closest('[data-cmct]'); if (!c) return; popChip(c);
@@ -945,7 +1013,7 @@ function renderPlanCities() {
     return;
   }
   // 找该省份下所有出现在本年 plans 里的城市
-  const cur = qhData(state.C.planYear);
+  const cur = yearOf(state.C.planYear);
   const plans = cur.plans || [];
   const cityCounts = new Map();
   for (const p of plans) {
@@ -982,7 +1050,7 @@ function feeNum(p) {
 }
 
 function filterPlans() {
-  const cur = qhData(state.C.planYear);
+  const cur = yearOf(state.C.planYear);
   if (cur._placeholder || !cur.plans) return [];
   let arr = cur.plans;
   if (state.C.batches.size) arr = arr.filter(p => state.C.batches.has(p.batch));
@@ -1018,28 +1086,61 @@ function planRow(p) {
       <div class="flex items-start gap-3 flex-wrap">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap mb-1">
-            <span class="font-display font-semibold">${p.school}</span>
-            <span class="text-xs text-ink-3">${p.sCode}</span>
-            <span class="pill bg-paper-100 text-ink-2">${p.batch}</span>
-            ${p.type && p.type !== '普通类' ? `<span class="pill bg-purple-100 text-purple-700">${p.type}</span>`:''}
+            <span class="font-display font-semibold">${esc(p.school)}</span>
+            <span class="text-xs text-ink-3">${esc(p.sCode)}</span>
+            <span class="pill bg-paper-100 text-ink-2">${esc(p.batch)}</span>
+            ${p.type && p.type !== '普通类' ? `<span class="pill bg-purple-100 text-purple-700">${esc(p.type)}</span>`:''}
           </div>
           <div class="text-sm">
-            <span class="font-medium">${p.major}</span>
-            <span class="text-ink-3 text-xs ml-1">${p.mCode}</span>
-            ${p.mGroup?`<span class="text-ink-3 text-xs ml-2">组${p.mGroup}</span>`:''}
+            <span class="font-medium">${esc(p.major)}</span>
+            <span class="text-ink-3 text-xs ml-1">${esc(p.mCode)}</span>
+            ${p.mGroup?`<span class="text-ink-3 text-xs ml-2">组${esc(p.mGroup)}</span>`:''}
           </div>
-          ${p.note ? `<div class="text-xs text-ink-3 mt-1">${p.note}</div>` : ''}
+          ${p.note ? `<div class="text-xs text-ink-3 mt-1">${esc(p.note)}</div>` : ''}
           <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-ink-3">
-            <span>选科：<b class="text-ink-2">${p.req || '不限'}</b></span>
-            <span>计划：<b class="text-ink-2">${p.plan} 人</b></span>
-            <span>学制：<b class="text-ink-2">${p.years || '—'}</b></span>
-            <span>学费：<b class="text-ink-2">${p.fee || '—'}</b></span>
+            <span>选科：<b class="text-ink-2">${esc(p.req || '不限')}</b></span>
+            <span>计划：<b class="text-ink-2">${esc(p.plan)} 人</b></span>
+            <span>学制：<b class="text-ink-2">${esc(p.years || '—')}</b></span>
+            <span>学费：<b class="text-ink-2">${esc(p.fee || '—')}</b></span>
           </div>
         </div>
         <a href="${chsiSchoolUrl(p.school)}" target="_blank" rel="noopener" class="text-xs text-ink-2 hover:text-accent border-b border-dotted border-line-2 hover:border-accent self-start">阳光高考 ↗</a>
       </div>
     </div>`;
 }
+
+// 下载一份可直接照抄的录取数据 JSON 模板（字段与本工具解析逻辑一致）
+function downloadSampleJSON() {
+  const sample = {
+    _meta: { province: '示例省', year: 2025, subject: '物理类', plans: 1, majorScores: 1 },
+    plans: [{
+      school: '示例大学', sCode: '0001', major: '计算机科学与技术', mCode: '080901',
+      mCat: '计算机类', mGroup: '', note: '', subject: '物理类', req: '物理+化学',
+      type: '普通类', batch: '本科批', plan: 5, years: '四年', fee: '5000', lang: '不限'
+    }],
+    majorScores: [{
+      school: '示例大学', major: '计算机科学与技术', mCode: '080901', batch: '本科批',
+      mGroup: '', minScore: 580, minRank: 12000, is985: false, is211: false,
+      owner: '公办', province: '某省', note: ''
+    }],
+    schoolScores: [{
+      school: '示例大学', batch: '本科批', type: '普通类', minScore: 575, minRank: 13000,
+      lineDiff: 120, admitted: 5, is985: false, is211: false, owner: '公办', province: '某省'
+    }],
+    rankTable: [
+      { score: 600, cum: 8000, line: 430 },
+      { score: 580, cum: 12000, line: 430 },
+      { score: 560, cum: 18000, line: 430 }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '录取数据模板-2025.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+window.downloadSampleJSON = downloadSampleJSON;
 
 function renderCUploadGuide() {
   return `<div class="bg-white border-2 border-dashed border-line p-12 text-center">
@@ -1048,18 +1149,18 @@ function renderCUploadGuide() {
     <p class="text-sm text-ink-3 mb-6 max-w-lg mx-auto">本工具支持任意省份的录取数据。请按以下步骤准备并上传 JSON 文件：</p>
     <div class="text-left max-w-xl mx-auto space-y-3 text-sm text-ink-2 mb-6">
       <div class="flex gap-3"><span class="num-display text-accent font-bold">01</span><span>准备数据：收集你所在省份的历年<b>招生计划</b>、<b>专业录取分数</b>、<b>院校录取分数</b>、<b>一分一段表</b>（Excel 格式）</span></div>
-      <div class="flex gap-3"><span class="num-display text-accent font-bold">02</span><span>运行脚本：将数据放入 <code class="bg-paper-100 px-1.5 py-0.5">scripts/</code> 目录，参照 <code class="bg-paper-100 px-1.5 py-0.5">parse_qinghai_history.py</code> 修改字段映射，运行后生成 <code class="bg-paper-100 px-1.5 py-0.5">YYYY.json</code> 文件</span></div>
-      <div class="flex gap-3"><span class="num-display text-accent font-bold">03</span><span>上传数据：将生成的 JSON 文件拖入上方上传区域，或点击"选择文件"按钮，支持同时上传多个年份</span></div>
-      <div class="flex gap-3"><span class="num-display text-accent font-bold">04</span><span>开始使用：上传成功后，分数推荐、院校趋势、招生计划三个子功能均自动启用</span></div>
+      <div class="flex gap-3"><span class="num-display text-accent font-bold">02</span><span>整理成 JSON：<button onclick="downloadSampleJSON()" class="text-accent border-b border-accent hover:opacity-70">下载 JSON 模板/示例</button> 作为参照，按其中字段填入你本省的数据（也可参照 <code class="bg-paper-100 px-1.5 py-0.5">scripts/build_admission_json.py</code> 自行转换 Excel）</span></div>
+      <div class="flex gap-3"><span class="num-display text-accent font-bold">03</span><span>上传数据：将生成的 JSON 文件拖入上方上传区域，或点击"选择文件"按钮，文件名需含 4 位年份（如 <code class="bg-paper-100 px-1.5 py-0.5">2025.json</code>），支持同时上传多个年份</span></div>
+      <div class="flex gap-3"><span class="num-display text-accent font-bold">04</span><span>开始使用：上传成功后，分数推荐、院校趋势、招生计划三个子功能均自动启用（数据只在你本地浏览器解析，不会上传到任何服务器）</span></div>
     </div>
     <div class="text-xs text-ink-3 border-t border-line pt-4 max-w-lg mx-auto">
-      JSON 文件需包含以下字段：<code class="bg-paper-100 px-1">plans</code>（招生计划数组）· <code class="bg-paper-100 px-1">majorScores</code>（专业录取分数）· <code class="bg-paper-100 px-1">schoolScores</code>（院校录取分数）· <code class="bg-paper-100 px-1">rankTable</code>（一分一段表）
+      JSON 文件需包含以下字段：<code class="bg-paper-100 px-1">plans</code>（招生计划数组）· <code class="bg-paper-100 px-1">majorScores</code>（专业录取分数）· <code class="bg-paper-100 px-1">schoolScores</code>（院校录取分数）· <code class="bg-paper-100 px-1">rankTable</code>（一分一段表）· <code class="bg-paper-100 px-1">_meta</code>（省份/年份/科类）
     </div>
   </div>`;
 }
 
 function renderPlans() {
-  const cur = qhData(state.C.planYear);
+  const cur = yearOf(state.C.planYear);
   if (cur._placeholder || !cur.plans?.length) {
     $('#C-list').innerHTML = renderCUploadGuide();
     $('#C-pager').innerHTML='';
@@ -1098,7 +1199,7 @@ function renderPlans() {
       const totalP = items.reduce((s,p)=>s+p.plan, 0);
       return `<details class="group bg-white border border-line/60 overflow-hidden hover:border-line-2 transition">
         <summary class="p-4 flex items-center gap-3">
-          <div class="flex-1"><div class="font-display font-semibold">${key}</div><div class="text-xs text-ink-3">${items.length} 条计划 · 合计 ${totalP} 人</div></div>
+          <div class="flex-1"><div class="font-display font-semibold">${esc(key)}</div><div class="text-xs text-ink-3">${items.length} 条计划 · 合计 ${totalP} 人</div></div>
           <a href="${state.C.group==='school'?chsiSchoolUrl(key):chsiMajorUrl(key)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-xs text-ink-2 hover:text-accent border-b border-dotted border-line-2 hover:border-accent">阳光高考 ↗</a>
           <div class="text-ink-4 group-open:rotate-180 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
         </summary>
@@ -1145,6 +1246,8 @@ function initTabs() {
       $('#tab-B').classList.toggle('hidden', tab !== 'B');
       $('#tab-C').classList.toggle('hidden', tab !== 'C');
       $('#tab-D').classList.toggle('hidden', tab !== 'D');
+      $('#tab-E').classList.toggle('hidden', tab !== 'E');
+      if (tab === 'E') renderProvinceRules();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
@@ -1584,12 +1687,45 @@ const state_D = {
   loading: false,
 };
 
+// 国内外主流大模型服务商预设（均为 OpenAI 兼容接口）
+const PROVIDER_PRESETS = {
+  openai:      { base: 'https://api.openai.com/v1',                                  model: 'gpt-4o' },
+  deepseek:    { base: 'https://api.deepseek.com/v1',                                model: 'deepseek-chat' },
+  dashscope:   { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1',          model: 'qwen-max' },
+  moonshot:    { base: 'https://api.moonshot.cn/v1',                                 model: 'moonshot-v1-8k' },
+  zhipu:       { base: 'https://open.bigmodel.cn/api/paas/v4',                       model: 'glm-4-plus' },
+  volc:        { base: 'https://ark.cn-beijing.volces.com/api/v3',                   model: 'doubao-pro-32k' },
+  baidu:       { base: 'https://qianfan.baidubce.com/v2',                            model: 'ernie-4.5-turbo-8k' },
+  hunyuan:     { base: 'https://api.hunyuan.cloud.tencent.com/v1',                   model: 'hunyuan-turbo' },
+  minimax:     { base: 'https://api.minimax.chat/v1',                                model: 'abab6.5s-chat' },
+  siliconflow: { base: 'https://api.siliconflow.cn/v1',                              model: 'deepseek-ai/DeepSeek-V3' },
+  custom:      { base: '',                                                           model: '' },
+};
+
 function initModeD() {
   const saveBtn = $('#D-save-config');
   const clearBtn = $('#D-clear-chat');
   const sendBtn = $('#D-send-btn');
   const input = $('#D-user-input');
+  const providerSel = $('#D-provider');
   if (!saveBtn) return;
+
+  // 服务商快选：选择后自动填入 Base URL 与默认模型（custom 仅清空待用户输入）
+  if (providerSel) {
+    providerSel.onchange = () => {
+      const p = PROVIDER_PRESETS[providerSel.value];
+      if (!p) return;
+      if (providerSel.value !== 'custom') {
+        $('#D-api-base').value = p.base;
+        $('#D-model').value = p.model;
+      } else {
+        $('#D-api-base').value = '';
+        $('#D-model').value = '';
+        $('#D-api-base').focus();
+      }
+      showDStatus(`已填入 ${providerSel.options[providerSel.selectedIndex].text} 的地址与模型，请填写 API Key 后保存`, 'ok');
+    };
+  }
 
   // 载入本地存储的配置
   const saved = localStorage.getItem('advisor_config');
@@ -1747,8 +1883,101 @@ function removeLoadingBubble() {
   document.getElementById('D-loading-bubble')?.remove();
 }
 
+// ===================== 模式 E：各省志愿填报规则 =====================
+let provinceRulesCache = null;
+let selectedRuleProvince = '';
+
+async function loadProvinceRules() {
+  if (provinceRulesCache) return provinceRulesCache;
+  try {
+    const res = await fetch('data/province_rules.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    provinceRulesCache = await res.json();
+  } catch (e) {
+    provinceRulesCache = { provinces: [], _meta: {} };
+  }
+  return provinceRulesCache;
+}
+
+async function renderProvinceRules() {
+  const grid = $('#E-province-grid');
+  if (!grid) return;
+  const data = await loadProvinceRules();
+  const provinces = data.provinces || [];
+  if (!provinces.length) {
+    grid.innerHTML = `<span class="text-xs text-ink-3">规则数据未能加载（请确认 data/province_rules.json 存在并通过本地服务器访问）</span>`;
+    return;
+  }
+  grid.innerHTML = provinces.map(p =>
+    `<span class="chip ${selectedRuleProvince===p.name?'chip-on':''}" data-prov="${p.name}">${p.name}</span>`
+  ).join('');
+  grid.onclick = e => {
+    const c = e.target.closest('[data-prov]'); if (!c) return; popChip(c);
+    selectedRuleProvince = c.dataset.prov;
+    syncChips('#E-province-grid','data-prov', selectedRuleProvince);
+    renderRuleDetail();
+  };
+  if (selectedRuleProvince) renderRuleDetail();
+}
+
+function ruleField(label, value) {
+  return `<div class="border border-line bg-white p-4">
+    <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-1.5">${label}</div>
+    <div class="text-ink-2 text-sm leading-relaxed">${value ?? '—'}</div>
+  </div>`;
+}
+
+function renderRuleDetail() {
+  const box = $('#E-rule-detail'); if (!box) return;
+  const data = provinceRulesCache; if (!data) return;
+  const p = (data.provinces || []).find(x => x.name === selectedRuleProvince);
+  if (!p) return;
+  const count = (p.parallelCount != null)
+    ? `<span class="display-num text-3xl text-ink">${p.parallelCount}</span> <span class="text-ink-3 text-sm">${p.parallelUnit || '个平行志愿'}</span>`
+    : `<span class="text-ink-2">以本省考试院当年公告为准</span>`;
+  const batches = Array.isArray(p.batches) && p.batches.length
+    ? p.batches.map(b => `<span class="pill pill-line mr-1 mb-1 inline-block">${b}</span>`).join('')
+    : '—';
+  const officialLink = p.officialUrl
+    ? `<a href="${p.officialUrl}" target="_blank" rel="noopener" class="text-accent border-b border-accent hover:opacity-70">${p.examAuthority || p.name + '教育考试院'} ↗</a>`
+    : (p.examAuthority || '—');
+  box.innerHTML = `
+    <div class="border-y-2 border-ink py-6 mb-6 flex items-end justify-between flex-wrap gap-4">
+      <div>
+        <div class="text-xs text-accent tracking-wide2 uppercase mb-1">${p.examMode || ''} ${p.newGaokaoFirstYear ? '· 新高考首考 ' + p.newGaokaoFirstYear : ''}</div>
+        <h2 class="display-hero text-3xl">${p.name}</h2>
+        ${p.summary ? `<p class="text-sm text-ink-3 mt-2 max-w-xl">${p.summary}</p>` : ''}
+      </div>
+      <div class="text-right">
+        <div class="text-xs text-ink-3 tracking-wide2 uppercase mb-1">本科批平行志愿</div>
+        ${count}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+      ${ruleField('高考模式', `${p.examMode || '—'}${p.examModeNote ? '<br><span class="text-xs text-ink-3">' + p.examModeNote + '</span>' : ''}`)}
+      ${ruleField('志愿模式', p.voluntaryMode)}
+      ${ruleField('每组可填专业', p.perGroupMajors != null ? p.perGroupMajors + ' 个' + (p.obeyAdjust ? '（含服从调剂）' : '') : (p.obeyAdjust ? '设服从专业调剂' : '—'))}
+      ${ruleField('批次设置', batches)}
+      ${ruleField('官方查询入口', officialLink)}
+      ${ruleField('选科 / 说明', p.examModeNote || p.summary || '—')}
+    </div>
+    <div class="border-l-4 border-accent bg-paper-50 p-4 text-xs text-ink-2 leading-relaxed">
+      <b>提示：</b>了解规则后，可前往 <button onclick="document.querySelector('[data-tab=&quot;C&quot;]').click()" class="text-accent border-b border-accent">03 录取数据</button> 上传 ${p.name} 历年录取数据，系统会按本省平行志愿数量给出冲 / 稳 / 保推荐。规则与数量仅供参考，<b>请以 ${p.examAuthority || p.name + '教育考试院'} 当年正式公告为准</b>。
+    </div>`;
+}
+
+// 取某省份的本科批平行志愿总数（用于 Mode C 推荐档位分配）。
+// 已知且为有限数字时返回该数字；规则未加载 / 未知省份 / 该省 parallelCount 为 null（如新疆分批不适用）时返回 null，
+// 由调用方决定如何回退，避免把未知静默当成 96。
+function provinceVoluntaryCount(provinceName) {
+  if (!provinceRulesCache || !provinceName || typeof provinceName !== 'string') return null;
+  const p = (provinceRulesCache.provinces || []).find(x => provinceName.includes(x.name) || x.name.includes(provinceName));
+  return (p && Number.isFinite(p.parallelCount)) ? p.parallelCount : null;
+}
+
 // 启动
+loadProvinceRules();  // 预加载省份规则（非阻塞，供 Mode C 推荐与 Mode E 使用）
 loadAll().catch(err => {
   console.error(err);
-  $('#loading').innerHTML = `<div class="text-rose-600">加载失败：${escapeHtml(err.message)}<br><span class="text-xs text-ink-3">请通过本地服务器访问，不要直接 file:// 打开（fetch 会被浏览器拦截）。在项目目录运行 <code class="bg-paper-100 px-1.5 py-0.5 rounded">python3 -m http.server 8000</code> 后访问 http://localhost:8000/</span></div>`;
+  $('#loading').innerHTML = `<div class="text-rose-600">加载失败：${err.message}<br><span class="text-xs text-ink-3">请通过本地服务器访问，不要直接 file:// 打开（fetch 会被浏览器拦截）。在项目目录运行 <code class="bg-paper-100 px-1.5 py-0.5 rounded">python3 -m http.server 8000</code> 后访问 http://localhost:8000/</span></div>`;
 });

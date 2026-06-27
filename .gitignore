@@ -1,6 +1,9 @@
+# 系统 / 编辑器
 .DS_Store
 *.pyc
 __pycache__/
+.vscode/
+*.log
 
 # 环境变量与密钥
 .env
@@ -15,15 +18,37 @@ id_rsa
 id_dsa
 .npmrc
 
-# 本地生成的省级录取数据（含敏感教育数据，不宜公开）
-data/qh_*.json
-
-# 构建工具（如后续引入）
+# 依赖 / 构建
 node_modules/
+.next/
 
-# OMC 内部状态文件
+# AI / 工具内部状态（不入公开仓库）
 .omc/
 .codex/
-.claude/local/
+.claude/
+*.jsonl
+.pipeline-state.json
 *-todo.md
 *.state.json
+
+# 隐私防线：用户/个人录取数据与中间产物一律不提交
+# 本项目录取数据由用户在本地浏览器上传，仓库不内置任何省份的考生/录取数据
+青海*/
+报考信息/
+*个人*
+*成绩*
+data/qh_*.json
+qh_*.json
+gaokao_admissions_*.json
+recommendations_*.json
+zhiyuan_*.json
+data/*_personal*.json
+*.xls
+*.xlsx
+*.csv
+
+# 备份
+*.bak
+*.bak-*
+agentdb.rvf
+agentdb.rvf.lock
