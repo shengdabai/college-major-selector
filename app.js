@@ -501,6 +501,109 @@ function renderCDataStatus() {
   $('#C-data-status').innerHTML = cells.join('');
 }
 
+// 校验 + 类型规范化一份上传/示例数据；返回 { ok:true, norm } 或 { ok:false, error }
+// handleDataFiles（用户上传）与 loadDemoData（示例数据）共用，保证同一套防崩/防 XSS 规范化。
+function normalizeUpload(data, year) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, error: '顶层应为 JSON 对象（含 plans / majorScores / schoolScores / rankTable）' };
+  }
+  const badField = ['plans','majorScores','schoolScores','rankTable']
+    .find(k => data[k] !== undefined && !Array.isArray(data[k]));
+  if (badField) return { ok: false, error: `字段 ${badField} 必须是数组` };
+  // 过滤非对象数组元素（[null]/[1]/["x"]），再逐字段强制类型
+  const objArr = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+  const normPlan = p => ({
+    ...p, school:S(p.school), sCode:S(p.sCode), major:S(p.major), mCode:S(p.mCode),
+    mCat:S(p.mCat), mGroup:S(p.mGroup), note:S(p.note), subject:S(p.subject),
+    req:S(p.req), type:S(p.type), batch:S(p.batch), years:S(p.years), fee:S(p.fee),
+    lang:S(p.lang), plan:N(p.plan),
+  });
+  const normScore = r => ({
+    ...r, school:S(r.school), major:S(r.major), mCode:S(r.mCode), batch:S(r.batch),
+    mGroup:S(r.mGroup), type:S(r.type), owner:S(r.owner), province:S(r.province), note:S(r.note),
+    minScore:N(r.minScore), minRank:N(r.minRank), lineDiff:N(r.lineDiff), admitted:N(r.admitted),
+    is985: !!r.is985, is211: !!r.is211,
+  });
+  const rawMeta = (data._meta && typeof data._meta === 'object') ? data._meta : {};
+  const norm = {
+    _meta: { ...rawMeta, province: S(rawMeta.province), subject: S(rawMeta.subject) },
+    plans: objArr(data.plans).map(normPlan),
+    majorScores: objArr(data.majorScores).map(normScore),
+    schoolScores: objArr(data.schoolScores).map(normScore),
+    rankTable: objArr(data.rankTable).filter(x => Number.isFinite(+x.score))
+      .map(x => ({ ...x, score:N(x.score), cum:N(x.cum), line:S(x.line) })),
+  };
+  if (!norm.plans.length && !norm.majorScores.length && !norm.rankTable.length) {
+    return { ok: false, error: 'plans / majorScores / rankTable 至少需有一项非空' };
+  }
+  norm._meta.plans = norm._meta.plans ?? norm.plans.length;
+  norm._meta.majorScores = norm._meta.majorScores ?? norm.majorScores.length;
+  norm._meta.year = norm._meta.year ?? year;
+  return { ok: true, norm };
+}
+
+// 一键载入合成示例数据（示例省·非真实），让用户零门槛体验模式三的冲/稳/保推荐
+async function loadDemoData() {
+  const log = $('#C-upload-log');
+  try {
+    const res = await fetch('data/demo-admission-2025.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const r = normalizeUpload(data, 2025);
+    if (!r.ok) throw new Error(r.error);
+    state.yearData[2025] = r.norm;
+    state.C.refYear = 2025;
+    state.C.planYear = 2025;
+    state.C.sub = 'score';
+    if (log) log.innerHTML = `<div class="py-1 text-safe">✓ 已载入示例数据（示例省 · 物理类 · ${r.norm.majorScores.length} 条专业分，<b>非真实数据</b>，仅供体验）。下方输入分数即可看到冲/稳/保推荐。</div>`;
+    renderCDataStatus();
+    initScoreView();
+    initTrendSearch();
+    initPlanFilters();
+    // 自动填一个示例分数并算一次，立刻呈现效果
+    const scoreInput = $('#C-input-score');
+    if (scoreInput) { scoreInput.value = '600'; state.C.inputScore = '600'; }
+    computeRecommendation();
+    // 切到分数推荐子视图
+    $$('.C-sub-btn').forEach(b => b.classList.toggle('tab-active', b.dataset.sub === 'score'));
+    $$('.C-sub-view').forEach(v => v.classList.toggle('hidden', v.id !== 'C-score'));
+    document.getElementById('C-rec-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    if (log) log.innerHTML = `<div class="py-1 text-accent">✗ 示例数据载入失败：${esc(e.message)}（请通过本地服务器或在线 Demo 访问）</div>`;
+  }
+}
+window.loadDemoData = loadDemoData;
+
+// 清除所有已载入（上传或示例）数据，恢复到未上传状态（含全部模式三筛选/输入状态）
+function clearYearData() {
+  for (const y of Object.keys(state.yearData)) state.yearData[y] = null;
+  // 分数推荐
+  state.C.rec = null;
+  state.C.inputScore = ''; state.C.inputRank = '';
+  state.C.onlyBk = true;
+  { const bk = $('#C-only-bk'); if (bk) bk.checked = true; }
+  // 院校趋势
+  state.C.selectedSchool = '';
+  // 招生计划筛选状态全部归零，避免清除后再载入被旧筛选意外过滤
+  state.C.batches = new Set(); state.C.reqs = new Set(); state.C.types = new Set();
+  state.C.province = ''; state.C.city = ''; state.C.mCats = new Set();
+  state.C.feeMin = ''; state.C.feeMax = ''; state.C.keyword = ''; state.C.page = 1;
+  // 清空输入框
+  ['#C-input-score','#C-input-rank','#C-school-search','#C-search','#C-fee-min','#C-fee-max']
+    .forEach(sel => { const el = $(sel); if (el) el.value = ''; });
+  $('#C-rec-result')?.classList.add('hidden');
+  $('#C-rec-empty')?.classList.remove('hidden');
+  $('#C-trend-result') && ($('#C-trend-result').innerHTML = '');
+  $('#C-school-suggest')?.classList.add('hidden');
+  const log = $('#C-upload-log');
+  if (log) log.innerHTML = '<div class="py-1 text-ink-3">已清除所有已载入数据，可重新载入示例或上传本省数据。</div>';
+  renderCDataStatus();
+  initScoreView();
+  initTrendSearch();
+  initPlanFilters();
+}
+window.clearYearData = clearYearData;
+
 // 处理用户上传的 JSON 数据文件（支持多个）
 async function handleDataFiles(files) {
   const results = [];
@@ -513,58 +616,14 @@ async function handleDataFiles(files) {
       const yearMatch = file.name.match(/(\d{4})/);
       if (!yearMatch) { results.push(`⚠ ${esc(file.name)}：文件名中未找到年份（需含4位数字年份）`); continue; }
       const year = parseInt(yearMatch[1], 10);
-      // 验证数据格式：顶层须是对象
-      if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        results.push(`⚠ ${esc(file.name)}：顶层应为 JSON 对象（含 plans / majorScores / schoolScores / rankTable）`);
-        continue;
-      }
-      // 四个核心字段若存在必须是数组；缺失则补空数组，避免下游 .filter / [0] 崩溃
-      const badField = ['plans','majorScores','schoolScores','rankTable']
-        .find(k => data[k] !== undefined && !Array.isArray(data[k]));
-      if (badField) {
-        results.push(`⚠ ${esc(file.name)}：字段 ${badField} 必须是数组`);
-        continue;
-      }
-      // 过滤掉非对象数组元素（如 [null] / [1] / ["x"]），再对每个对象做字段类型规范化
-      const objArr = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
-      // 招生计划：字符串字段强制字符串，计划数强制数字
-      const normPlan = p => ({
-        ...p, school:S(p.school), sCode:S(p.sCode), major:S(p.major), mCode:S(p.mCode),
-        mCat:S(p.mCat), mGroup:S(p.mGroup), note:S(p.note), subject:S(p.subject),
-        req:S(p.req), type:S(p.type), batch:S(p.batch), years:S(p.years), fee:S(p.fee),
-        lang:S(p.lang), plan:N(p.plan),
-      });
-      // 专业分 / 院校分：字符串字段强制字符串，分数/位次/线差/录取数强制数字
-      const normScore = r => ({
-        ...r, school:S(r.school), major:S(r.major), mCode:S(r.mCode), batch:S(r.batch),
-        mGroup:S(r.mGroup), type:S(r.type), owner:S(r.owner), province:S(r.province), note:S(r.note),
-        minScore:N(r.minScore), minRank:N(r.minRank), lineDiff:N(r.lineDiff), admitted:N(r.admitted),
-        is985: !!r.is985, is211: !!r.is211,
-      });
-      const rawMeta = (data._meta && typeof data._meta === 'object') ? data._meta : {};
-      const norm = {
-        _meta: { ...rawMeta, province: S(rawMeta.province), subject: S(rawMeta.subject) },
-        plans: objArr(data.plans).map(normPlan),
-        majorScores: objArr(data.majorScores).map(normScore),
-        schoolScores: objArr(data.schoolScores).map(normScore),
-        // rankTable 还要求 score 可转为有限数字（换算位次的基础），并规范 score/cum/line 类型
-        rankTable: objArr(data.rankTable).filter(x => Number.isFinite(+x.score))
-          .map(x => ({ ...x, score:N(x.score), cum:N(x.cum), line:S(x.line) })),
-      };
-      if (!norm.plans.length && !norm.majorScores.length && !norm.rankTable.length) {
-        results.push(`⚠ ${esc(file.name)}：plans / majorScores / rankTable 至少需有一项非空`);
-        continue;
-      }
-      // 补齐 _meta 统计，供数据状态展示
-      norm._meta.plans = norm._meta.plans ?? norm.plans.length;
-      norm._meta.majorScores = norm._meta.majorScores ?? norm.majorScores.length;
-      norm._meta.year = norm._meta.year ?? year;
-      state.yearData[year] = norm;
+      const res = normalizeUpload(data, year);
+      if (!res.ok) { results.push(`⚠ ${esc(file.name)}：${res.error}`); continue; }
+      state.yearData[year] = res.norm;
       // 更新默认参考年份
       const loaded = getLoadedYears();
       if (loaded.length) state.C.refYear = loaded.at(-1);
       state.C.planYear = loaded.at(-1) || year;
-      results.push(`✓ ${esc(file.name)}：${year} 年数据加载成功（${norm.plans.length} 条计划 · ${norm.majorScores.length} 条专业分）`);
+      results.push(`✓ ${esc(file.name)}：${year} 年数据加载成功（${res.norm.plans.length} 条计划 · ${res.norm.majorScores.length} 条专业分）`);
     } catch(e) {
       results.push(`✗ ${esc(file.name)}：解析失败 — ${esc(e.message)}`);
     }
@@ -662,6 +721,9 @@ function renderRecommendation() {
   // 建议填报数按本省平行志愿总数分配（冲 ~42% / 稳 ~36% / 保 ~22%）
   // 省份取自上传数据的 _meta.province；规则已知用本省数量，未知则用 96 作通用参考并显式标注
   const dataProvince = state.yearData[r.inputYear]?._meta?.province || state.yearData[r.refYear]?._meta?.province || '';
+  // 是否为合成示例数据（避免把示例说成「真实录取数据」）
+  const dataNote = S(state.yearData[r.inputYear]?._meta?.note || state.yearData[r.refYear]?._meta?.note || '');
+  const isDemo = /示例|合成|demo/i.test(dataProvince) || /示例|合成|非真实/.test(dataNote);
   const provCount = provinceVoluntaryCount(dataProvince);
   const total = provCount ?? 96;
   const countSource = provCount != null
@@ -731,7 +793,7 @@ function renderRecommendation() {
 
     <div class="text-xs text-ink-3 leading-relaxed pt-6 border-t border-line">
       <span class="tracking-wide2 uppercase mr-2">注</span>
-      推荐基于 ${r.refYear} 年真实录取数据，按位次比例匹配；建议填报数量${countSource}。每条均显示当年最低录取分与最低位次，便于横向对比。最终请以学校招生章程与省教育考试院公告为准。
+      ${isDemo ? '⚠ 当前为<b>合成示例数据（非真实录取数据）</b>，仅用于体验推荐效果；请上传你本省真实数据后再做决策。' : `推荐基于 ${r.refYear} 年录取数据`}，按位次比例匹配；建议填报数量${countSource}。每条均显示当年最低录取分与最低位次，便于横向对比。最终请以学校招生章程与省教育考试院公告为准。
     </div>
   `;
 }
@@ -907,6 +969,9 @@ function initPlanFilters() {
     $('#C-pager').innerHTML = '';
     $('#C-count').textContent = '';
     $('#C-plansum').textContent = '';
+    // 无数据时清空侧栏筛选 chip，与「已清除」状态一致
+    ['#C-batches','#C-reqs','#C-types','#C-provinces','#C-mcats'].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ''; });
+    const cityBox = $('#C-cities'); if (cityBox) cityBox.innerHTML = `<span class="text-xs text-ink-3">先选省份</span>`;
     return;
   }
   if (!yearAvail(state.C.planYear)) state.C.planYear = loaded.at(-1);

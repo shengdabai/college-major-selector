@@ -1,10 +1,29 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta name="description" content="智慧大学 · 高考志愿决策参考">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>智慧大学 · 高考志愿决策参考</title>
+<title>智慧大学 · 高考志愿决策参考工具 | 全国通用 · 本地隐私 · AI 顾问</title>
+<meta name="description" content="基于教育部公开数据（2,756 所院校 · 860 个本科专业）的高考志愿决策参考工具。上传本省录取数据即可生成冲/稳/保推荐，内置全国 31 省志愿规则与可接入任意大模型的 AI 顾问。纯静态、免注册、数据在浏览器本地处理。">
+<meta name="keywords" content="高考志愿,志愿填报,冲稳保推荐,高考AI顾问,大学专业选择,各省志愿规则,新高考,3+1+2,智慧大学,开源高考工具">
+<meta name="author" content="shengdabai">
+<meta name="theme-color" content="#c8102e">
+<link rel="canonical" href="https://shengdabai.github.io/college-major-selector/">
+<!-- 内联 SVG favicon：学院红学士帽，纸色背景，零外部请求 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23faf9f5'/%3E%3Cpath d='M32 16 6 27l26 11 21-8.9V42h4V26z' fill='%231a1a1a'/%3E%3Cpath d='M16 33v9c0 3.3 7.2 6 16 6s16-2.7 16-6v-9l-16 6.8z' fill='%23c8102e'/%3E%3C/svg%3E">
+<!-- Open Graph / 微信·微博·QQ 分享卡片 -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://shengdabai.github.io/college-major-selector/">
+<meta property="og:title" content="智慧大学 · 高考志愿决策参考工具">
+<meta property="og:description" content="基于教育部公开数据，全国通用的高考志愿冲稳保推荐 + 31 省志愿规则 + AI 大学专业顾问。纯静态免注册，录取数据在浏览器本地处理，不经过任何服务器。">
+<meta property="og:image" content="https://shengdabai.github.io/college-major-selector/docs/screenshot-01-home.png">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:site_name" content="智慧大学">
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="智慧大学 · 高考志愿决策参考工具">
+<meta name="twitter:description" content="全国通用的高考志愿冲稳保推荐 + 31 省志愿规则 + AI 顾问，纯静态免注册，数据本地处理。">
+<meta name="twitter:image" content="https://shengdabai.github.io/college-major-selector/docs/screenshot-01-home.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -133,6 +152,13 @@ tailwind.config = {
         </div>
         <h1 class="display-hero text-[36px] leading-[1.15] mb-3">为高中生准备的大学与专业对照工具</h1>
         <p class="text-ink-2 text-[14px] leading-[1.65] max-w-[560px]">基于教育部公开名单（<span class="num">2,756</span> 所院校 · <span class="num">860</span> 个本科专业），支持上传任意省份录取数据与一分一段表，提供地域、专业、分数三个维度的志愿筛选与冲稳保推荐，并可接入 AI 大模型进行专业顾问问答。</p>
+        <!-- 信任条：措辞准确，不夸大 -->
+        <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-ink-3 max-w-[560px]">
+          <span class="inline-flex items-center gap-1"><span class="text-safe">●</span> 开源免费</span>
+          <span class="inline-flex items-center gap-1"><span class="text-safe">●</span> 录取数据在浏览器本地解析</span>
+          <span class="inline-flex items-center gap-1"><span class="text-safe">●</span> 免注册 · 不收集账号</span>
+          <span class="inline-flex items-center gap-1"><span class="text-safe">●</span> 全国通用 · 不内置任何真实录取数据</span>
+        </div>
       </div>
       <div class="col-span-5">
         <div class="border-l border-line-2 pl-6">
@@ -277,7 +303,12 @@ tailwind.config = {
 
     <!-- 数据上传区 -->
     <div class="mb-6 border border-line bg-white p-6">
-      <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">上传录取数据 JSON 文件</div>
+      <!-- 零门槛体验：没有本省数据也能先看效果 -->
+      <div class="mb-5 flex flex-wrap items-center gap-3 p-3 bg-accent-soft/40 border border-accent/20">
+        <button type="button" onclick="loadDemoData()" class="btn-primary">🔮 一键载入示例数据体验</button>
+        <span class="text-xs text-ink-2">还没准备好本省数据？点这里用一份<b>合成示例数据</b>（非真实）立即体验冲/稳/保推荐效果。</span>
+      </div>
+      <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">或：上传你本省的录取数据 JSON 文件</div>
       <div id="C-upload-area" class="border-2 border-dashed border-line-2 p-6 text-center cursor-pointer hover:border-accent transition-colors">
         <div class="text-2xl mb-2">📂</div>
         <p class="text-sm text-ink-2 mb-1">拖拽 JSON 文件到此处，或点击选择文件</p>
@@ -286,6 +317,7 @@ tailwind.config = {
       </div>
       <div class="mt-3 flex items-center gap-4 text-xs">
         <button type="button" onclick="downloadSampleJSON()" class="text-accent border-b border-accent hover:opacity-70">↓ 下载 JSON 模板/示例</button>
+        <button type="button" onclick="clearYearData()" class="text-ink-3 border-b border-dotted border-ink-4 hover:text-accent">清除已载入数据</button>
         <span class="text-ink-3">不知道格式？先下载模板照着填即可。数据只在本地浏览器解析，不上传服务器。</span>
       </div>
       <div id="C-upload-log" class="mt-3 text-xs text-ink-2 space-y-1"></div>
@@ -495,7 +527,7 @@ tailwind.config = {
         <div>
           <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">API Key</label>
           <input id="D-api-key" type="password" class="input-line w-full text-sm" placeholder="sk-...">
-          <p class="text-xs text-ink-4 mt-1">密钥仅存于本地浏览器，不会上传至任何服务器</p>
+          <p class="text-xs text-ink-4 mt-1">密钥仅保存在你本机浏览器；AI 请求时由浏览器直连你配置的服务商，不经过本项目服务器</p>
         </div>
         <div>
           <label class="text-xs text-ink-3 tracking-wide2 uppercase block mb-1">模型名称</label>
@@ -607,12 +639,17 @@ tailwind.config = {
     </div>
     <div class="col-span-4">
       <div class="display-hero text-base text-ink mb-2">关于</div>
-      <p>智慧大学是一个为高中毕业生准备的志愿决策参考工具，所有数据为公开来源，本站不收集任何用户信息，录取数据完全由用户在本地上传、不经过任何服务器。</p>
-      <p class="mt-2 text-ink-4 num">v3.0 · 2026 · 全国通用版</p>
+      <p>智慧大学是一个为高中毕业生准备的志愿决策参考工具，所有数据为公开来源，本站不收集任何用户信息，录取数据完全由用户在本地浏览器解析、不经过任何服务器。</p>
+      <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <a href="https://github.com/shengdabai/college-major-selector" target="_blank" rel="noopener" class="text-ink-2 hover:text-accent border-b border-dotted border-line-2 hover:border-accent">GitHub 开源仓库 ↗</a>
+        <a href="https://shengdabai.github.io/college-major-selector/" target="_blank" rel="noopener" class="text-ink-2 hover:text-accent border-b border-dotted border-line-2 hover:border-accent">在线 Demo ↗</a>
+        <span class="text-ink-4">开源协议 MIT</span>
+      </div>
+      <p class="mt-2 text-ink-4 num">v3.1 · 2026 · 全国通用版 · 开源 MIT</p>
     </div>
   </div>
 </footer>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
