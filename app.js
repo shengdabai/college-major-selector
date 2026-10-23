@@ -124,9 +124,10 @@ async function loadAll() {
   renderCompareBar();
   initStickyBrand();
 
-  // URL参数 ?tab=B/C/D 用于截图
+  // URL参数 ?tab=B/C/D 用于截图。只接受 A–E：其他值拼进选择器会让 querySelector 抛异常，
+  // 异常消息里带着原始参数，会被下面的「加载失败」提示写进页面（可构造链接执行脚本）
   const urlTab = new URLSearchParams(location.search).get('tab');
-  if (urlTab) {
+  if (urlTab && /^[A-E]$/.test(urlTab)) {
     const btn = document.querySelector(`[data-tab="${urlTab}"]`);
     if (btn) btn.click();
   }
@@ -2044,5 +2045,5 @@ function provinceVoluntaryCount(provinceName) {
 loadProvinceRules();  // 预加载省份规则（非阻塞，供 Mode C 推荐与 Mode E 使用）
 loadAll().catch(err => {
   console.error(err);
-  $('#loading').innerHTML = `<div class="text-rose-600">加载失败：${err.message}<br><span class="text-xs text-ink-3">请通过本地服务器访问，不要直接 file:// 打开（fetch 会被浏览器拦截）。在项目目录运行 <code class="bg-paper-100 px-1.5 py-0.5 rounded">python3 -m http.server 8000</code> 后访问 http://localhost:8000/</span></div>`;
+  $('#loading').innerHTML = `<div class="text-rose-600">加载失败：${esc(err.message)}<br><span class="text-xs text-ink-3">请通过本地服务器访问，不要直接 file:// 打开（fetch 会被浏览器拦截）。在项目目录运行 <code class="bg-paper-100 px-1.5 py-0.5 rounded">python3 -m http.server 8000</code> 后访问 http://localhost:8000/</span></div>`;
 });
