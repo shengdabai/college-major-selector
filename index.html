@@ -111,6 +111,20 @@
   footer { font-family: "Inter", sans-serif; }
   /* 防止 Tailwind 紫色复发 */
   ::selection { background:#1a1a1a; color:#faf9f5; }
+  /* 移动端（≤760px）：12 列网格改单列，导航横滑，避免整页横向溢出 */
+  @media (max-width: 760px) {
+    .max-w-\[1280px\] { padding-left: 16px !important; padding-right: 16px !important; }
+    .grid.grid-cols-12 { grid-template-columns: minmax(0, 1fr) !important; }
+    [class*="col-span-"] { grid-column: 1 / -1 !important; }
+    nav { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    .tab-btn { margin-right: 18px; flex: 0 0 auto; }
+    #sticky-brand { display: none; }
+    header .display-hero.text-2xl { white-space: nowrap; }
+    /* 表格在自己的滚动容器内横滑，不撑宽整页 */
+    .overflow-x-auto > table.w-full, .overflow-auto > table.w-full { min-width: 640px; }
+    /* 筛选 chip 触摸目标不低于 44px */
+    .chip { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
+  }
 </style>
 <!-- 预编译的 Tailwind 样式（scripts/build-css.sh 生成）。必须放在上面的 <style> 之后：原来 Play CDN 的样式也是追加在 <style> 之后，工具类才能盖过 .display-hero / .pill / .input-line 等自定义类，外观才和以前一致 -->
 <link rel="stylesheet" href="tailwind.css">
