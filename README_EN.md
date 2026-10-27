@@ -8,7 +8,7 @@
 
 ---
 
-Built on Ministry of Education public data (**2,756 universities · 860 undergraduate majors**), this tool helps students and parents make informed university and major choices. Pure static HTML — no backend, no registration, deployable to any static host. **Nationwide**: no province's candidate/admission data is bundled; admission data is uploaded by the user and parsed locally in the browser, never sent to this project's server. (Note: the page loads Tailwind and Google Fonts from CDNs, so the first load needs network; self-host those assets for full offline use.)
+Built on Ministry of Education public data (**2,756 universities · 860 undergraduate majors**), this tool helps students and parents make informed university and major choices. Pure static HTML — no backend, no registration, deployable to any static host. **Nationwide**: no province's candidate/admission data is bundled; admission data is uploaded by the user and parsed locally in the browser, never sent to this project's server. (Note: styles are precompiled into `tailwind.css` (Tailwind CLI 3.x; after changing class names run `scripts/build-css.sh` and commit the result). The page still loads Google Fonts from a CDN and falls back to system fonts when it is unreachable; self-host the fonts for full offline use.)
 
 ---
 

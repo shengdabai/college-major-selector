@@ -15,6 +15,16 @@ function esc(v) {
 const S = v => (v == null ? '' : String(v));
 const N = v => (Number.isFinite(+v) ? +v : 0);
 
+// 对比列表应是数组；本地存储被改坏时当作空列表，不让整页初始化中断。
+function readCompareList() {
+  try {
+    const v = JSON.parse(localStorage.getItem('compare') || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
+}
+
 const state = {
   unis: [],
   majors: [],          // 学科门类（嵌套）
@@ -44,7 +54,7 @@ const state = {
     page: 1,
   },
   // 对比
-  compare: new Set(JSON.parse(localStorage.getItem('compare') || '[]')),
+  compare: new Set(readCompareList()),
   // 模式 C：用户上传的本省历年录取数据（key = 年份）
   // 兼容任意省份 / 任意科类，字段由上传的 JSON _meta 决定
   yearData: { 2022:null, 2023:null, 2024:null, 2025:null, 2026:null },

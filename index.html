@@ -24,35 +24,11 @@
 <meta name="twitter:title" content="智慧大学 · 高考志愿决策参考工具">
 <meta name="twitter:description" content="全国通用的高考志愿冲稳保推荐 + 31 省志愿规则 + AI 顾问，纯静态免注册，数据本地处理。">
 <meta name="twitter:image" content="https://shengdabai.github.io/college-major-selector/docs/screenshot-01-home.png">
-<script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        paper:  { DEFAULT:'#faf9f5', 50:'#fdfcf9', 100:'#f6f4ec', 200:'#ece9dc' },
-        ink:    { DEFAULT:'#1a1a1a', 2:'#4a4a4a', 3:'#8a8a8a', 4:'#bdbdbd' },
-        line:   { DEFAULT:'#e5e3dc', 2:'#d4d1c5' },
-        accent: { DEFAULT:'#c8102e', 2:'#1f3a5f', soft:'#fbeae5' },
-        push:   { DEFAULT:'#b03a2e', soft:'#f8e8e3' },
-        warn:   { DEFAULT:'#c47a2c', soft:'#f7ecd9' },
-        safe:   { DEFAULT:'#4a7c59', soft:'#e3ede4' },
-        gold:   { DEFAULT:'#b8870b', soft:'#f4ecd0' },
-      },
-      fontFamily: {
-        display: ['"Noto Serif SC"', '"Source Han Serif SC"', '"Songti SC"', 'serif'],
-        sans:    ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
-        mono:    ['"JetBrains Mono"', '"SF Mono"', 'ui-monospace', 'monospace'],
-      },
-      letterSpacing: { tight2: '-0.02em', wide2: '0.18em' },
-      boxShadow: { card: '0 1px 0 rgba(26,26,26,.04), 0 0 0 1px rgba(26,26,26,.06)' },
-    }
-  }
-}
-</script>
+<!-- 字体表不阻塞首屏：国内网络访问 Google Fonts 常超时，原来的写法会一直白屏到请求失败；现在先用系统字体显示，字体到了再换上 -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.onload=null;this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
 <style>
   html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
   body { background: #faf9f5; color: #1a1a1a; font-feature-settings: "tnum" 1, "ss01" 1; }
@@ -136,6 +112,8 @@ tailwind.config = {
   /* 防止 Tailwind 紫色复发 */
   ::selection { background:#1a1a1a; color:#faf9f5; }
 </style>
+<!-- 预编译的 Tailwind 样式（scripts/build-css.sh 生成）。必须放在上面的 <style> 之后：原来 Play CDN 的样式也是追加在 <style> 之后，工具类才能盖过 .display-hero / .pill / .input-line 等自定义类，外观才和以前一致 -->
+<link rel="stylesheet" href="tailwind.css">
 </head>
 <body class="font-sans pb-32">
 

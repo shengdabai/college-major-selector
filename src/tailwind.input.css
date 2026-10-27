@@ -1,0 +1,5 @@
+/* Tailwind 入口：只放三层指令。
+   原 index.html 的 <style> 是普通 CSS（不是 type="text/tailwindcss"），仍留在 index.html 里，不进这里。 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
