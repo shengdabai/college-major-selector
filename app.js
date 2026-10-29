@@ -318,8 +318,10 @@ function compareRow(label, items, fn) {
 // ---------- CSV 导出 ----------
 function toCSV(rows) {
   const esc = v => {
-    const s = (v ?? '').toString();
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = (v ?? '').toString();
+    // 上传字段是文本，不能让 Excel 等表格软件将其解释为公式；数字值保持数字。
+    if (typeof v === 'string' && /^\s*[=+\-@]/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return rows.map(r => r.map(esc).join(',')).join('\n');
 }
@@ -425,7 +427,7 @@ function yearOf(year) {
 }
 function yearAvail(year) {
   const d = state.yearData[year];
-  return !!d && !d._placeholder && (d.plans?.length || d.majorScores?.length || d.rankTable?.length);
+  return !!d && !d._placeholder && (d.plans?.length || d.majorScores?.length || d.schoolScores?.length || d.rankTable?.length);
 }
 
 // 已加载的年份（动态，由用户上传决定）
@@ -461,8 +463,9 @@ function rankToScore(year, rank) {
   return d.rankTable.at(-1).score;
 }
 function rankToEquivalent(refRank, refYear, targetYear) {
-  const refTotal = yearOf(refYear).rankTable.at(-1)?.cum || 1;
-  const tgtTotal = yearOf(targetYear).rankTable.at(-1)?.cum || 1;
+  const refTotal = yearOf(refYear).rankTable.at(-1)?.cum;
+  const tgtTotal = yearOf(targetYear).rankTable.at(-1)?.cum;
+  if (!(refTotal > 0) || !(tgtTotal > 0)) return null;
   return Math.round(refRank * tgtTotal / refTotal);
 }
 
@@ -522,7 +525,7 @@ function normalizeUpload(data, year) {
     .find(k => data[k] !== undefined && !Array.isArray(data[k]));
   if (badField) return { ok: false, error: `字段 ${badField} 必须是数组` };
   // 过滤非对象数组元素（[null]/[1]/["x"]），再逐字段强制类型
-  const objArr = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+  const objArr = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object' && !Array.isArray(x)) : []);
   const normPlan = p => ({
     ...p, school:S(p.school), sCode:S(p.sCode), major:S(p.major), mCode:S(p.mCode),
     mCat:S(p.mCat), mGroup:S(p.mGroup), note:S(p.note), subject:S(p.subject),
@@ -535,20 +538,31 @@ function normalizeUpload(data, year) {
     minScore:N(r.minScore), minRank:N(r.minRank), lineDiff:N(r.lineDiff), admitted:N(r.admitted),
     is985: !!r.is985, is211: !!r.is211,
   });
+  // 换算依赖分数降序及累计人数递增；拒绝缺失/非法值，不能把它们默认为 0。
+  const numeric = v => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(+v);
+  const rankTable = objArr(data.rankTable);
+  if (rankTable.length !== (data.rankTable || []).length || rankTable.some(r =>
+    !numeric(r.score) || +r.score < 0 || !numeric(r.cum) || !Number.isSafeInteger(+r.cum) || +r.cum <= 0)) {
+    return { ok: false, error: 'rankTable 每行需有有效分数 score（非负数）和累计人数 cum（正整数）' };
+  }
+  rankTable.sort((a, b) => +b.score - +a.score);
+  if (rankTable.some((r, i) => i > 0 && (+r.score === +rankTable[i-1].score || +r.cum < +rankTable[i-1].cum))) {
+    return { ok: false, error: 'rankTable 分数不能重复，累计人数不能随分数降低而减少' };
+  }
   const rawMeta = (data._meta && typeof data._meta === 'object') ? data._meta : {};
   const norm = {
     _meta: { ...rawMeta, province: S(rawMeta.province), subject: S(rawMeta.subject) },
     plans: objArr(data.plans).map(normPlan),
     majorScores: objArr(data.majorScores).map(normScore),
     schoolScores: objArr(data.schoolScores).map(normScore),
-    rankTable: objArr(data.rankTable).filter(x => Number.isFinite(+x.score))
+    rankTable: rankTable
       .map(x => ({ ...x, score:N(x.score), cum:N(x.cum), line:S(x.line) })),
   };
-  if (!norm.plans.length && !norm.majorScores.length && !norm.rankTable.length) {
-    return { ok: false, error: 'plans / majorScores / rankTable 至少需有一项非空' };
+  if (!norm.plans.length && !norm.majorScores.length && !norm.schoolScores.length && !norm.rankTable.length) {
+    return { ok: false, error: 'plans / majorScores / schoolScores / rankTable 至少需有一项非空' };
   }
-  norm._meta.plans = norm._meta.plans ?? norm.plans.length;
-  norm._meta.majorScores = norm._meta.majorScores ?? norm.majorScores.length;
+  norm._meta.plans = norm.plans.length;
+  norm._meta.majorScores = norm.majorScores.length;
   norm._meta.year = norm._meta.year ?? year;
   return { ok: true, norm };
 }
@@ -563,6 +577,9 @@ async function loadDemoData() {
     const r = normalizeUpload(data, 2025);
     if (!r.ok) throw new Error(r.error);
     state.yearData[2025] = r.norm;
+    invalidateCResults();
+    state.C.inputRank = '';
+    $('#C-input-rank').value = '';
     state.C.refYear = 2025;
     state.C.planYear = 2025;
     state.C.sub = 'score';
@@ -615,6 +632,19 @@ function clearYearData() {
 }
 window.clearYearData = clearYearData;
 
+// 数据变更后移除旧结果，避免把上一次数据的推荐/趋势当成当前结果。
+function invalidateCResults() {
+  state.C.rec = null;
+  state.C.selectedSchool = '';
+  $('#C-rec-result')?.classList.add('hidden');
+  $('#C-rec-empty')?.classList.remove('hidden');
+  const trend = $('#C-trend-result');
+  if (trend) trend.innerHTML = '';
+  const search = $('#C-school-search');
+  if (search) search.value = '';
+  $('#C-school-suggest')?.classList.add('hidden');
+}
+
 // 处理用户上传的 JSON 数据文件（支持多个）
 async function handleDataFiles(files) {
   const results = [];
@@ -630,6 +660,7 @@ async function handleDataFiles(files) {
       const res = normalizeUpload(data, year);
       if (!res.ok) { results.push(`⚠ ${esc(file.name)}：${res.error}`); continue; }
       state.yearData[year] = res.norm;
+      invalidateCResults();
       // 更新默认参考年份
       const loaded = getLoadedYears();
       if (loaded.length) state.C.refYear = loaded.at(-1);
@@ -680,8 +711,15 @@ function initScoreView() {
 }
 
 function computeRecommendation() {
-  const score = parseInt(state.C.inputScore, 10);
-  let rank = parseInt(state.C.inputRank, 10);
+  const scoreText = state.C.inputScore.trim();
+  const rankText = state.C.inputRank.trim();
+  const score = scoreText === '' ? NaN : Number(scoreText);
+  let rank = rankText === '' ? NaN : Number(rankText);
+  if ((scoreText !== '' && (!Number.isFinite(score) || score < 0)) ||
+      (rankText !== '' && (!Number.isSafeInteger(rank) || rank <= 0))) {
+    alert('分数必须是非负数，位次必须是正整数');
+    return;
+  }
   if (!Number.isFinite(score) && !Number.isFinite(rank)) {
     alert('请输入分数或位次');
     return;
@@ -700,6 +738,10 @@ function computeRecommendation() {
     return;
   }
   const refRank = state.C.refYear === inputYear ? rank : rankToEquivalent(rank, inputYear, state.C.refYear);
+  if (!refRank) {
+    alert(`跨年换算需要 ${inputYear} 和 ${state.C.refYear} 年的一分一段表，请补充数据或选择同年参考`);
+    return;
+  }
   const refScore = rankToScore(state.C.refYear, refRank);
 
   const refData = yearOf(state.C.refYear);
