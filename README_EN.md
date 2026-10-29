@@ -78,6 +78,12 @@ File name must contain a 4-digit year (e.g. `2024.json`):
 }
 ```
 
+Scores and ranks are interpreted using the latest loaded year. Selecting a reference year changes the admission data used for matching.
+
+For multiple years, `_meta.province` and `_meta.subject` must both be non-empty strings and match exactly after trimming whitespace. Single-year data without these fields remains usable, but cannot be combined with another year. If supplied, `_meta.year` must match the filename year. Clear loaded data before switching cohorts.
+
+Demo data runs separately. Use “返回已上传数据” to restore uploaded data, or upload a valid file to return to it. Enter your score/rank again when returning. Clearing data removes both the demo and the saved upload session. Values outside the uploaded rank table's coverage are rejected instead of being clamped to its last row.
+
 No coding needed: click "**Download JSON template/sample**" in Mode 3 and fill in a few rows by hand. Or use `scripts/build_admission_json.py` (a generic template — adjust the column mapping to your Excel headers) to batch-convert. Multiple year files can be uploaded at once.
 
 ---
@@ -136,6 +142,19 @@ A quick reference for all 31 provinces: exam mode (3+3 / 3+1+2 / traditional), v
 ```
 
 ---
+
+## Local Checks
+
+No dependencies or AI service calls are required:
+
+```bash
+node --test tests/admission.test.cjs
+node --check app.js
+node --check tailwind.config.cjs
+bash -n scripts/build-css.sh
+```
+
+Tests use synthetic fixtures and mocked browser storage. Layout and full browser interactions require separate checks.
 
 ## Data Sources
 

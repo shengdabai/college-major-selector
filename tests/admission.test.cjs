@@ -29,7 +29,8 @@ function app(options = {}) {
   const alerts = [];
   const context = vm.createContext({
     window: {}, console: { ...console, error() {} }, URLSearchParams, location: { search: '' },
-    localStorage: { getItem: () => null },
+    localStorage: options.storage || { getItem: () => null, setItem() {}, removeItem() {} },
+    setTimeout() {},
     fetch: options.fetch || (() => new Promise(() => {})),
     alert: text => alerts.push(text),
     document: { querySelector: element, querySelectorAll: () => [],
@@ -41,7 +42,7 @@ function app(options = {}) {
 const table = [{ score: 600, cum: 1000 }, { score: 500, cum: 4000 }];
 const scores = [{ school: '合成大学', major: '合成专业', batch: '本科批', minScore: 580, minRank: 1000 }];
 function setData(a, year, data) {
-  a.context.fixture = data;
+  a.context.fixture = { _meta: { province: '合成省', subject: '物理类' }, ...data };
   a.run(`state.yearData[${year}] = normalizeUpload(fixture, ${year}).norm`);
 }
 
@@ -228,4 +229,225 @@ test('CSV export quotes carriage returns and preserves numeric values', () => {
   const a = app();
   a.context.cells = ['合成\r大学', 'a,"b"', -5, 0, null];
   assert.equal(a.run('toCSV([cells])'), '"合成\r大学","a,""b""",-5,0,');
+});
+
+
+const blockedStorage = {
+  getItem() { throw new Error('storage disabled'); },
+  setItem() { throw new Error('storage disabled'); },
+  removeItem() { throw new Error('storage disabled'); },
+};
+
+test('comparison remains usable when storage writes and removals fail', () => {
+  const a = app({ storage: blockedStorage });
+  a.run('renderCompareBar = () => {}; toggleCompare("synthetic");');
+  assert.equal(a.run('state.compare.has("synthetic")'), true);
+  a.run('clearCompare()');
+  assert.equal(a.run('state.compare.size'), 0);
+});
+
+test('advisor initialization survives denied storage reads', () => {
+  const a = app({ storage: blockedStorage });
+  assert.doesNotThrow(() => a.run('initModeD()'));
+  assert.equal(typeof a.element('#D-send-btn').onclick, 'function');
+});
+
+test('advisor retains session configuration when persistence fails', () => {
+  const a = app({ storage: blockedStorage });
+  a.run('initModeD(); sendAdvisorOpening = () => {}');
+  a.element('#D-api-key').value = 'synthetic-key';
+  a.element('#D-api-base').value = 'https://example.invalid/v1';
+  a.element('#D-model').value = 'synthetic-model';
+  assert.doesNotThrow(() => a.element('#D-save-config').onclick());
+  assert.equal(a.run('state_D.apiKey'), 'synthetic-key');
+  assert.match(a.element('#D-status').textContent, /本次|会话/);
+});
+
+function upload(a, year, data) {
+  a.context.files = [{ name: `synthetic-${year}.json`, text: async () => JSON.stringify(data) }];
+  return a.run('handleDataFiles(files)');
+}
+const cohort = { province: '合成省', subject: '物理类' };
+const admission = (meta = cohort) => ({ _meta: meta, majorScores: scores, rankTable: table });
+
+for (const meta of [{ province: '其他合成省', subject: '物理类' },
+  { province: '合成省', subject: '历史类' }, {}, { province: '合成省' }]) {
+  test(`incompatible or unknown upload cohort is rejected: ${JSON.stringify(meta)}`, async () => {
+    const a = app();
+    await upload(a, 2025, admission());
+    a.run('state.C.rec = { preserved: true }');
+    await upload(a, 2024, admission(meta));
+    assert.equal(a.run('yearAvail(2024)'), false);
+    assert.equal(a.run('state.C.rec.preserved'), true);
+    assert.match(a.element('#C-upload-log').innerHTML, /省份|科类/);
+  });
+}
+
+test('single-year missing metadata remains usable; mixed-year addition is rejected', async () => {
+  const a = app();
+  await upload(a, 2025, admission({}));
+  a.run('state.C.inputRank = "1000"; computeRecommendation()');
+  assert.equal(a.run('state.C.rec.rank'), 1000);
+  await upload(a, 2024, admission());
+  assert.equal(a.run('yearAvail(2024)'), false);
+});
+
+test('matching cohorts load across years and same-year replacement can change scope', async () => {
+  const a = app();
+  await upload(a, 2025, admission());
+  await upload(a, 2024, admission({ province: ' 合成省 ', subject: ' 物理类 ' }));
+  assert.equal(a.run('getLoadedYears().length'), 2);
+  const b = app();
+  await upload(b, 2025, admission());
+  await upload(b, 2025, admission({ province: '其他合成省', subject: '历史类' }));
+  assert.equal(b.run('yearOf(2025)._meta.subject'), '历史类');
+});
+
+test('metadata year must match the filename year', async () => {
+  const a = app();
+  await upload(a, 2025, admission({ ...cohort, year: 2024 }));
+  assert.equal(a.run('yearAvail(2025)'), false);
+  assert.match(a.element('#C-upload-log').innerHTML, /年份/);
+});
+
+for (const meta of [{ province: '合成省', subject: '历史类' }, {}]) {
+  test(`cross-year conversion independently rejects a different or unknown cohort ${JSON.stringify(meta)}`, () => {
+    const a = app();
+    setData(a, 2025, admission());
+    setData(a, 2024, admission(meta));
+    assert.equal(a.run('rankToEquivalent(1000, 2025, 2024)'), null);
+  });
+}
+
+test('demo is isolated from later uploaded years and preserves them for the next upload', async () => {
+  const a = app();
+  await upload(a, 2026, admission());
+  a.context.fetch = async () => ({ ok: true, json: async () => admission({ ...cohort, demo: true }) });
+  await a.run('loadDemoData()');
+  assert.equal(a.run('getLoadedYears().join()'), '2025');
+  assert.equal(a.run('state.C.rec.inputYear'), 2025);
+  await a.run('loadDemoData()');
+  await upload(a, 2024, admission());
+  assert.equal(a.run('getLoadedYears().join()'), '2024,2026');
+  assert.equal(a.run('state.C.inputScore'), '');
+  assert.equal(a.element('#C-input-score').value, '');
+  assert.equal(a.run('yearOf(2026)._meta.demo'), undefined);
+});
+
+test('failed upload during demo preserves both demo and saved uploaded data', async () => {
+  const a = app();
+  await upload(a, 2026, admission());
+  a.context.fetch = async () => ({ ok: true, json: async () => admission({ ...cohort, demo: true }) });
+  await a.run('loadDemoData()');
+  await upload(a, 2024, admission({}));
+  assert.equal(a.run('getLoadedYears().join()'), '2025');
+  assert.equal(a.run('state.C.rec.inputYear'), 2025);
+  await upload(a, 2024, admission());
+  assert.equal(a.run('getLoadedYears().join()'), '2024,2026');
+});
+
+test('clear data also clears the saved upload session behind the demo', async () => {
+  const a = app();
+  await upload(a, 2026, admission());
+  a.context.fetch = async () => ({ ok: true, json: async () => admission() });
+  await a.run('loadDemoData();');
+  a.run('clearYearData()');
+  await upload(a, 2024, admission());
+  assert.equal(a.run('getLoadedYears().join()'), '2024');
+});
+
+test('invalid recalculation hides the previous recommendation', () => {
+  const a = app();
+  setData(a, 2025, admission());
+  a.run('state.C.inputRank = "1000"; computeRecommendation()');
+  a.run('state.C.inputRank = "-1"; computeRecommendation()');
+  assert.equal(a.run('state.C.rec'), null);
+  assert.equal(a.element('#C-rec-result').classList.contains('hidden'), true);
+});
+
+test('editing score inputs invalidates the previous result before recalculation', () => {
+  const a = app();
+  setData(a, 2025, admission());
+  a.run('initScoreView(); state.C.inputRank = "1000"; computeRecommendation()');
+  a.element('#C-input-score').oninput({ target: { value: '610' } });
+  assert.equal(a.run('state.C.rec'), null);
+  assert.equal(a.element('#C-rec-result').classList.contains('hidden'), true);
+});
+
+test('returning from demo restores uploaded years and clears demo inputs/results', async () => {
+  const a = app();
+  await upload(a, 2026, admission());
+  a.context.fetch = async () => ({ ok: true, json: async () => admission() });
+  await a.run('loadDemoData()');
+  a.run('restoreUploadedData()');
+  assert.equal(a.run('getLoadedYears().join()'), '2026');
+  assert.equal(a.run('state.C.rec'), null);
+  assert.equal(a.element('#C-input-score').value, '');
+  assert.equal(a.element('#C-restore-upload').classList.contains('hidden'), true);
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
+}
+
+test('late demo response cannot resurrect cleared data', async () => {
+  const a = app();
+  const response = deferred();
+  a.context.fetch = () => response.promise;
+  const loading = a.run('loadDemoData()');
+  a.run('clearYearData()');
+  response.resolve({ ok: true, json: async () => admission() });
+  await loading;
+  assert.equal(a.run('getLoadedYears().length'), 0);
+  assert.equal(a.run('state.C.rec'), null);
+});
+
+test('late upload cannot resurrect cleared data', async () => {
+  const a = app();
+  const contents = deferred();
+  a.context.files = [{ name: 'synthetic-2025.json', text: () => contents.promise }];
+  const loading = a.run('handleDataFiles(files)');
+  a.run('clearYearData()');
+  contents.resolve(JSON.stringify(admission()));
+  await loading;
+  assert.equal(a.run('getLoadedYears().length'), 0);
+  assert.match(a.element('#C-upload-log').innerHTML, /已清除/);
+});
+
+test('late demo response cannot replace a newer successful upload', async () => {
+  const a = app();
+  const response = deferred();
+  a.context.fetch = () => response.promise;
+  const loading = a.run('loadDemoData()');
+  await upload(a, 2026, admission());
+  response.resolve({ ok: true, json: async () => admission() });
+  await loading;
+  assert.equal(a.run('getLoadedYears().join()'), '2026');
+});
+
+for (const field of ['province', 'subject']) {
+  test(`cohort metadata rejects a non-string ${field}`, () => {
+    const a = app();
+    a.context.fixture = admission({ ...cohort, [field]: { invalid: true } });
+    assert.equal(a.run('normalizeUpload(fixture, 2025).ok'), false);
+  });
+}
+
+test('rank lookups reject values beyond the uploaded table coverage', () => {
+  const a = app();
+  setData(a, 2025, admission());
+  assert.equal(a.run('scoreToRank(2025, 499)'), null);
+  assert.equal(a.run('rankToScore(2025, 4001)'), null);
+  assert.equal(a.run('scoreToRank(2025, 500)'), 4000);
+  assert.equal(a.run('rankToScore(2025, 4000)'), 500);
+});
+
+test('out-of-range input rank does not generate recommendations', () => {
+  const a = app();
+  setData(a, 2025, admission());
+  a.run('state.C.inputRank = "4001"; computeRecommendation()');
+  assert.equal(a.run('state.C.rec'), null);
+  assert.match(a.alerts.join(), /范围/);
 });
