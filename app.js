@@ -60,6 +60,7 @@ const state = {
   yearData: { 2022:null, 2023:null, 2024:null, 2025:null, 2026:null },
   // 当前数据省份与科类（从上传 JSON 的 _meta 推断，用于界面文案）
   dataMeta: { province: '', subject: '' },
+  savedYearData: null, // 示例模式暂存上传数据；下次有效上传时恢复，不与示例混算。
   C: {
     sub: 'score',           // score / trend / plans
     // 分数推荐
@@ -87,6 +88,7 @@ const state = {
 };
 
 const MAX_COMPARE = 4;
+let dataOperation = 0; // 后发起的数据操作使旧异步读取失效。
 
 // ---------- 阳光高考官方链接 ----------
 function chsiSchoolUrl(name) {
@@ -204,7 +206,9 @@ function toggleCompare(uid) {
     }
     state.compare.add(uid);
   }
-  localStorage.setItem('compare', JSON.stringify([...state.compare]));
+  try { localStorage.setItem('compare', JSON.stringify([...state.compare])); } catch (e) {
+    // 禁用存储或额度已满时，对比列表仍可在当前会话使用。
+  }
   renderCompareBar();
   // 更新所有可见的"加入对比"按钮态
   document.querySelectorAll(`[data-cmp="${uid}"]`).forEach(b => {
@@ -249,7 +253,7 @@ function renderCompareBar() {
 
 function clearCompare() {
   state.compare.clear();
-  localStorage.removeItem('compare');
+  try { localStorage.removeItem('compare'); } catch (e) {}
   renderCompareBar();
   document.querySelectorAll('[data-cmp]').forEach(b => {
     b.className = 'inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium border transition bg-white text-ink-2 border-line hover:border-ink hover:text-ink';
@@ -318,8 +322,10 @@ function compareRow(label, items, fn) {
 // ---------- CSV 导出 ----------
 function toCSV(rows) {
   const esc = v => {
-    const s = (v ?? '').toString();
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = (v ?? '').toString();
+    // 上传字段是文本，不能让 Excel 等表格软件将其解释为公式；数字值保持数字。
+    if (typeof v === 'string' && /^\s*[=+\-@]/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return rows.map(r => r.map(esc).join(',')).join('\n');
 }
@@ -425,7 +431,7 @@ function yearOf(year) {
 }
 function yearAvail(year) {
   const d = state.yearData[year];
-  return !!d && !d._placeholder && (d.plans?.length || d.majorScores?.length || d.rankTable?.length);
+  return !!d && !d._placeholder && (d.plans?.length || d.majorScores?.length || d.schoolScores?.length || d.rankTable?.length);
 }
 
 // 已加载的年份（动态，由用户上传决定）
@@ -450,7 +456,7 @@ function scoreToRank(year, score) {
   for (const row of d.rankTable) {
     if (row.score <= score) return row.cum;
   }
-  return d.rankTable.at(-1).cum;
+  return null; // 分数低于已上传表的覆盖范围。
 }
 function rankToScore(year, rank) {
   const d = yearOf(year);
@@ -458,11 +464,24 @@ function rankToScore(year, rank) {
   for (const row of d.rankTable) {
     if (row.cum >= rank) return row.score;
   }
-  return d.rankTable.at(-1).score;
+  return null; // 位次超过已上传表的累计人数。
+}
+// 多年份只能比较同一省份、同一科类；缺失信息时不推测群体。
+function sameCohort(a, b) {
+  return ['province', 'subject'].every(k => a?._meta?.[k] && a._meta[k] === b?._meta?.[k]);
+}
+function uploadScopeError(data, year, existing) {
+  const others = Object.entries(existing).filter(([y, d]) => +y !== year && d);
+  if (others.some(([, d]) => !sameCohort(data, d))) {
+    return '多年份数据必须填写相同的 _meta.province（省份）和 _meta.subject（科类）；请补齐信息，或清除已载入数据后上传';
+  }
+  return '';
 }
 function rankToEquivalent(refRank, refYear, targetYear) {
-  const refTotal = yearOf(refYear).rankTable.at(-1)?.cum || 1;
-  const tgtTotal = yearOf(targetYear).rankTable.at(-1)?.cum || 1;
+  if (!sameCohort(yearOf(refYear), yearOf(targetYear))) return null;
+  const refTotal = yearOf(refYear).rankTable.at(-1)?.cum;
+  const tgtTotal = yearOf(targetYear).rankTable.at(-1)?.cum;
+  if (!(refTotal > 0) || !(tgtTotal > 0)) return null;
   return Math.round(refRank * tgtTotal / refTotal);
 }
 
@@ -500,6 +519,8 @@ function initModeC() {
 }
 
 function renderCDataStatus() {
+  const hasSavedUploads = state.savedYearData && Object.values(state.savedYearData).some(Boolean);
+  $('#C-restore-upload')?.classList.toggle('hidden', !hasSavedUploads);
   const loaded = getLoadedYears();
   if (!loaded.length) {
     $('#C-data-status').innerHTML = `<div class="col-span-2 text-ink-3 text-xs">尚未上传数据 · 请在下方上传 JSON 文件</div>`;
@@ -522,7 +543,7 @@ function normalizeUpload(data, year) {
     .find(k => data[k] !== undefined && !Array.isArray(data[k]));
   if (badField) return { ok: false, error: `字段 ${badField} 必须是数组` };
   // 过滤非对象数组元素（[null]/[1]/["x"]），再逐字段强制类型
-  const objArr = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+  const objArr = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object' && !Array.isArray(x)) : []);
   const normPlan = p => ({
     ...p, school:S(p.school), sCode:S(p.sCode), major:S(p.major), mCode:S(p.mCode),
     mCat:S(p.mCat), mGroup:S(p.mGroup), note:S(p.note), subject:S(p.subject),
@@ -535,34 +556,57 @@ function normalizeUpload(data, year) {
     minScore:N(r.minScore), minRank:N(r.minRank), lineDiff:N(r.lineDiff), admitted:N(r.admitted),
     is985: !!r.is985, is211: !!r.is211,
   });
+  // 换算依赖分数降序及累计人数递增；拒绝缺失/非法值，不能把它们默认为 0。
+  const numeric = v => (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(+v);
+  const rankTable = objArr(data.rankTable);
+  if (rankTable.length !== (data.rankTable || []).length || rankTable.some(r =>
+    !numeric(r.score) || +r.score < 0 || !numeric(r.cum) || !Number.isSafeInteger(+r.cum) || +r.cum <= 0)) {
+    return { ok: false, error: 'rankTable 每行需有有效分数 score（非负数）和累计人数 cum（正整数）' };
+  }
+  rankTable.sort((a, b) => +b.score - +a.score);
+  if (rankTable.some((r, i) => i > 0 && (+r.score === +rankTable[i-1].score || +r.cum < +rankTable[i-1].cum))) {
+    return { ok: false, error: 'rankTable 分数不能重复，累计人数不能随分数降低而减少' };
+  }
   const rawMeta = (data._meta && typeof data._meta === 'object') ? data._meta : {};
+  if (['province', 'subject'].some(k => rawMeta[k] != null && typeof rawMeta[k] !== 'string')) {
+    return { ok: false, error: '_meta.province（省份）和 _meta.subject（科类）必须是字符串' };
+  }
+  if (rawMeta.year != null && (!numeric(rawMeta.year) || +rawMeta.year !== year)) {
+    return { ok: false, error: '_meta.year 年份必须与文件名年份一致' };
+  }
   const norm = {
-    _meta: { ...rawMeta, province: S(rawMeta.province), subject: S(rawMeta.subject) },
+    _meta: { ...rawMeta, province: S(rawMeta.province).trim(), subject: S(rawMeta.subject).trim() },
     plans: objArr(data.plans).map(normPlan),
     majorScores: objArr(data.majorScores).map(normScore),
     schoolScores: objArr(data.schoolScores).map(normScore),
-    rankTable: objArr(data.rankTable).filter(x => Number.isFinite(+x.score))
+    rankTable: rankTable
       .map(x => ({ ...x, score:N(x.score), cum:N(x.cum), line:S(x.line) })),
   };
-  if (!norm.plans.length && !norm.majorScores.length && !norm.rankTable.length) {
-    return { ok: false, error: 'plans / majorScores / rankTable 至少需有一项非空' };
+  if (!norm.plans.length && !norm.majorScores.length && !norm.schoolScores.length && !norm.rankTable.length) {
+    return { ok: false, error: 'plans / majorScores / schoolScores / rankTable 至少需有一项非空' };
   }
-  norm._meta.plans = norm._meta.plans ?? norm.plans.length;
-  norm._meta.majorScores = norm._meta.majorScores ?? norm.majorScores.length;
+  norm._meta.plans = norm.plans.length;
+  norm._meta.majorScores = norm.majorScores.length;
   norm._meta.year = norm._meta.year ?? year;
   return { ok: true, norm };
 }
 
 // 一键载入合成示例数据（示例省·非真实），让用户零门槛体验模式三的冲/稳/保推荐
 async function loadDemoData() {
+  const operation = ++dataOperation;
   const log = $('#C-upload-log');
   try {
     const res = await fetch('data/demo-admission-2025.json');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+    if (operation !== dataOperation) return;
     const r = normalizeUpload(data, 2025);
     if (!r.ok) throw new Error(r.error);
-    state.yearData[2025] = r.norm;
+    if (!state.savedYearData) state.savedYearData = state.yearData;
+    state.yearData = { 2025: r.norm };
+    invalidateCResults();
+    state.C.inputRank = '';
+    $('#C-input-rank').value = '';
     state.C.refYear = 2025;
     state.C.planYear = 2025;
     state.C.sub = 'score';
@@ -580,13 +624,34 @@ async function loadDemoData() {
     $$('.C-sub-view').forEach(v => v.classList.toggle('hidden', v.id !== 'C-score'));
     document.getElementById('C-rec-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
+    if (operation !== dataOperation) return;
     if (log) log.innerHTML = `<div class="py-1 text-accent">✗ 示例数据载入失败：${esc(e.message)}（请通过本地服务器或在线 Demo 访问）</div>`;
   }
 }
 window.loadDemoData = loadDemoData;
 
+function restoreUploadedData() {
+  if (!state.savedYearData) return;
+  ++dataOperation;
+  state.yearData = state.savedYearData;
+  state.savedYearData = null;
+  state.C.inputScore = ''; state.C.inputRank = '';
+  $('#C-input-score').value = ''; $('#C-input-rank').value = '';
+  invalidateCResults();
+  const latest = getLoadedYears().at(-1) || 2025;
+  state.C.refYear = latest; state.C.planYear = latest;
+  $('#C-upload-log').textContent = '已返回此前上传的数据，请重新输入分数或位次。';
+  renderCDataStatus();
+  initScoreView();
+  initTrendSearch();
+  initPlanFilters();
+}
+window.restoreUploadedData = restoreUploadedData;
+
 // 清除所有已载入（上传或示例）数据，恢复到未上传状态（含全部模式三筛选/输入状态）
 function clearYearData() {
+  ++dataOperation;
+  state.savedYearData = null;
   for (const y of Object.keys(state.yearData)) state.yearData[y] = null;
   // 分数推荐
   state.C.rec = null;
@@ -615,13 +680,28 @@ function clearYearData() {
 }
 window.clearYearData = clearYearData;
 
+// 数据变更后移除旧结果，避免把上一次数据的推荐/趋势当成当前结果。
+function invalidateCResults() {
+  state.C.rec = null;
+  state.C.selectedSchool = '';
+  $('#C-rec-result')?.classList.add('hidden');
+  $('#C-rec-empty')?.classList.remove('hidden');
+  const trend = $('#C-trend-result');
+  if (trend) trend.innerHTML = '';
+  const search = $('#C-school-search');
+  if (search) search.value = '';
+  $('#C-school-suggest')?.classList.add('hidden');
+}
+
 // 处理用户上传的 JSON 数据文件（支持多个）
 async function handleDataFiles(files) {
+  const operation = ++dataOperation;
   const results = [];
   for (const file of files) {
     if (!file.name.endsWith('.json')) continue;
     try {
       const text = await file.text();
+      if (operation !== dataOperation) return;
       const data = JSON.parse(text);
       // 从文件名推断年份，例如 qh_2024.json 或 2024.json 或任意省份_2024.json
       const yearMatch = file.name.match(/(\d{4})/);
@@ -629,13 +709,24 @@ async function handleDataFiles(files) {
       const year = parseInt(yearMatch[1], 10);
       const res = normalizeUpload(data, year);
       if (!res.ok) { results.push(`⚠ ${esc(file.name)}：${res.error}`); continue; }
+      const uploaded = state.savedYearData || state.yearData;
+      const scopeError = uploadScopeError(res.norm, year, uploaded);
+      if (scopeError) { results.push(`⚠ ${esc(file.name)}：${scopeError}`); continue; }
+      if (state.savedYearData) {
+        state.C.inputScore = ''; state.C.inputRank = '';
+        $('#C-input-score').value = ''; $('#C-input-rank').value = '';
+      }
+      state.yearData = uploaded;
+      state.savedYearData = null;
       state.yearData[year] = res.norm;
+      invalidateCResults();
       // 更新默认参考年份
       const loaded = getLoadedYears();
       if (loaded.length) state.C.refYear = loaded.at(-1);
       state.C.planYear = loaded.at(-1) || year;
       results.push(`✓ ${esc(file.name)}：${year} 年数据加载成功（${res.norm.plans.length} 条计划 · ${res.norm.majorScores.length} 条专业分）`);
     } catch(e) {
+      if (operation !== dataOperation) return;
       results.push(`✗ ${esc(file.name)}：解析失败 — ${esc(e.message)}`);
     }
   }
@@ -672,16 +763,30 @@ function initScoreView() {
     state.C.onlyBk = e.target.checked;
     if (state.C.rec) computeRecommendation();
   };
-  $('#C-input-score').oninput = e => state.C.inputScore = e.target.value.trim();
-  $('#C-input-rank').oninput = e => state.C.inputRank = e.target.value.trim();
+  $('#C-input-score').oninput = e => { state.C.inputScore = e.target.value.trim(); clearRecommendation(); };
+  $('#C-input-rank').oninput = e => { state.C.inputRank = e.target.value.trim(); clearRecommendation(); };
   $('#C-btn-recommend').onclick = computeRecommendation;
   $('#C-input-score').onkeydown = e => { if (e.key === 'Enter') computeRecommendation(); };
   $('#C-input-rank').onkeydown = e => { if (e.key === 'Enter') computeRecommendation(); };
 }
 
+function clearRecommendation() {
+  state.C.rec = null;
+  $('#C-rec-result')?.classList.add('hidden');
+  $('#C-rec-empty')?.classList.remove('hidden');
+}
+
 function computeRecommendation() {
-  const score = parseInt(state.C.inputScore, 10);
-  let rank = parseInt(state.C.inputRank, 10);
+  clearRecommendation();
+  const scoreText = state.C.inputScore.trim();
+  const rankText = state.C.inputRank.trim();
+  const score = scoreText === '' ? NaN : Number(scoreText);
+  let rank = rankText === '' ? NaN : Number(rankText);
+  if ((scoreText !== '' && (!Number.isFinite(score) || score < 0)) ||
+      (rankText !== '' && (!Number.isSafeInteger(rank) || rank <= 0))) {
+    alert('分数必须是非负数，位次必须是正整数');
+    return;
+  }
   if (!Number.isFinite(score) && !Number.isFinite(rank)) {
     alert('请输入分数或位次');
     return;
@@ -699,7 +804,20 @@ function computeRecommendation() {
     alert(`无法换算位次，请检查输入或确认 ${inputYear} 一分一段表已包含在上传数据中`);
     return;
   }
+  if (state.C.refYear !== inputYear && !sameCohort(yearOf(inputYear), yearOf(state.C.refYear))) {
+    alert('跨年换算需要相同且完整的省份与科类信息，请检查 _meta.province 和 _meta.subject');
+    return;
+  }
+  const inputTotal = yearOf(inputYear).rankTable.at(-1)?.cum;
+  if (inputTotal && rank > inputTotal) {
+    alert(`位次超出 ${inputYear} 年一分一段表范围，请检查输入或补充完整数据`);
+    return;
+  }
   const refRank = state.C.refYear === inputYear ? rank : rankToEquivalent(rank, inputYear, state.C.refYear);
+  if (!refRank) {
+    alert(`跨年换算需要 ${inputYear} 和 ${state.C.refYear} 年的一分一段表，请补充数据或选择同年参考`);
+    return;
+  }
   const refScore = rankToScore(state.C.refYear, refRank);
 
   const refData = yearOf(state.C.refYear);
@@ -1804,7 +1922,8 @@ function initModeD() {
   }
 
   // 载入本地存储的配置
-  const saved = localStorage.getItem('advisor_config');
+  let saved;
+  try { saved = localStorage.getItem('advisor_config'); } catch (e) {}
   if (saved) {
     try {
       const c = JSON.parse(saved);
@@ -1823,13 +1942,17 @@ function initModeD() {
     if (keyInput && keyInput !== '••••••••') state_D.apiKey = keyInput;
     state_D.apiBase = $('#D-api-base').value.trim() || 'https://api.openai.com/v1';
     state_D.model = $('#D-model').value.trim() || 'gpt-4o';
-    localStorage.setItem('advisor_config', JSON.stringify({
-      apiKey: state_D.apiKey,
-      apiBase: state_D.apiBase,
-      model: state_D.model,
-    }));
+    let persisted = false;
+    try {
+      localStorage.setItem('advisor_config', JSON.stringify({
+        apiKey: state_D.apiKey,
+        apiBase: state_D.apiBase,
+        model: state_D.model,
+      }));
+      persisted = true;
+    } catch (e) {}
     $('#D-api-key').value = state_D.apiKey ? '••••••••' : '';
-    showDStatus('配置已保存', 'ok');
+    showDStatus(persisted ? '配置已保存' : '浏览器存储不可用，配置仅在本次会话有效', persisted ? 'ok' : 'err');
     // 首次保存后发送开场白
     if (!state_D.messages.length) sendAdvisorOpening();
   };

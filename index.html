@@ -298,6 +298,7 @@
       <!-- 零门槛体验：没有本省数据也能先看效果 -->
       <div class="mb-5 flex flex-wrap items-center gap-3 p-3 bg-accent-soft/40 border border-accent/20">
         <button type="button" onclick="loadDemoData()" class="btn-primary">🔮 一键载入示例数据体验</button>
+        <button type="button" id="C-restore-upload" onclick="restoreUploadedData()" class="btn-ghost hidden">返回已上传数据</button>
         <span class="text-xs text-ink-2">还没准备好本省数据？点这里用一份<b>合成示例数据</b>（非真实）立即体验冲/稳/保推荐效果。</span>
       </div>
       <div class="text-xs tracking-wide2 uppercase text-ink-3 mb-3">或：上传你本省的录取数据 JSON 文件</div>
@@ -642,6 +643,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=11"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

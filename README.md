@@ -121,6 +121,13 @@ python3 scripts/build_admission_json.py <你的Excel.xlsx> 2025 --province 河�
 # 生成 data/2025.json，再到网页上传
 ```
 JSON 字段契约见 `scripts/build_admission_json.py` 顶部注释。
+
+输入分数和位次按当前已载入的最新年份解释；选择参考年份只改变匹配的录取数据。
+
+多年份文件的 `_meta.province`（省份）和 `_meta.subject`（科类）必须填写完整且完全一致；首尾空格会被去掉。缺少这些字段的单年文件仍可使用，但不能与其他年份合并。`_meta.year` 如有填写，必须与文件名年份一致。若要切换省份或科类，请先清除已载入数据。
+
+示例模式独立运行，不与已上传数据混算。体验后可点「返回已上传数据」，或上传有效文件以返回此前数据；返回时需重新输入分数或位次。「清除已载入数据」会同时清除示例与暂存的上传数据。分数或位次超出已上传一分一段表范围时，工具会停止换算，需先检查输入或补充数据。
+
 </details>
 
 ---
@@ -160,6 +167,19 @@ API Key 只存在你本机浏览器的 localStorage，请求由浏览器直发�
 ```
 
 ---
+
+## 本地验证
+
+无需安装依赖，不调用 AI 服务：
+
+```bash
+node --test tests/admission.test.cjs
+node --check app.js
+node --check tailwind.config.cjs
+bash -n scripts/build-css.sh
+```
+
+测试使用合成数据与模拟浏览器存储，覆盖录取数据校验、示例隔离、异步清除、CSV 导出及 URL 参数安全。浏览器中的布局和完整交互仍需另行检查。
 
 ## 🤝 参与贡献
 
